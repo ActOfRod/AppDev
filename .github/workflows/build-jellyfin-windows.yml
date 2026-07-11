@@ -1,4 +1,4 @@
-name: Build Jellyfin Windows
+name: Build ValveFin Windows
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   build-windows:
-    name: Build Windows .exe
+    name: Build ValveFin.exe
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -47,6 +47,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: valvefin-windows
-          path: apps/jellyfin/release/*.exe
+          path: |
+            apps/jellyfin/release/ValveFin.exe
+            apps/jellyfin/release/ValveFin-Setup-*.exe
           if-no-files-found: error
           retention-days: 14
