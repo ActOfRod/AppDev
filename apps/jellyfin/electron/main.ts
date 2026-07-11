@@ -24,6 +24,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
 

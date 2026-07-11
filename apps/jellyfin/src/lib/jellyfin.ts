@@ -16,6 +16,7 @@ export type JellyfinItem = {
   ProductionYear?: number
   CommunityRating?: number
   OfficialRating?: string
+  RunTimeTicks?: number
   ImageTags?: {
     Primary?: string
     Logo?: string
@@ -28,8 +29,37 @@ export type JellyfinItem = {
     UnplayedItemCount?: number
   }
   SeriesName?: string
+  SeriesId?: string
+  SeasonId?: string
+  ParentId?: string
   ParentIndexNumber?: number
   IndexNumber?: number
+  MediaType?: string
+}
+
+export type PlaybackSession = {
+  item: JellyfinItem
+  mediaSourceId: string
+  playSessionId: string
+  streamUrl: string
+  startPositionTicks: number
+  isTranscoding: boolean
+}
+
+type MediaSource = {
+  Id: string
+  Name?: string
+  Container?: string
+  DirectStreamUrl?: string
+  TranscodingUrl?: string
+  SupportsDirectPlay?: boolean
+  SupportsDirectStream?: boolean
+  SupportsTranscoding?: boolean
+}
+
+type PlaybackInfoResponse = {
+  PlaySessionId: string
+  MediaSources: MediaSource[]
 }
 
 type AuthResponse = {
@@ -272,8 +302,267 @@ export function itemImageUrl(
   return `${session.serverUrl}/Items/${item.Id}/Images/${type}?maxWidth=${maxWidth}&tag=${tag}&quality=85`
 }
 
-export function openInWebClient(session: JellyfinSession, itemId?: string): void {
-  const base = `${session.serverUrl}/web/`
-  const url = itemId ? `${base}#/details?id=${itemId}` : base
-  window.open(url, '_blank')
+export function isPlayableItem(item: JellyfinItem): boolean {
+  return item.Type === 'Movie' || item.Type === 'Episode' || item.Type === 'Video' || item.MediaType === 'Video'
+}
+
+export function isSeriesItem(item: JellyfinItem): boolean {
+  return item.Type === 'Series'
+}
+
+export function isSeasonItem(item: JellyfinItem): boolean {
+  return item.Type === 'Season'
+}
+
+export async function getItem(session: JellyfinSession, itemId: string): Promise<JellyfinItem> {
+  const params = new URLSearchParams({
+    Fields: 'Overview,ProductionYear,CommunityRating,OfficialRating,MediaStreams,People,RecursiveItemCount',
+  })
+  return jellyfinFetch<JellyfinItem>(
+    session.serverUrl,
+    `/Users/${session.userId}/Items/${itemId}?${params}`,
+    {
+      deviceId: session.deviceId,
+      token: session.accessToken,
+    },
+  )
+}
+
+export async function getSeasons(
+  session: JellyfinSession,
+  seriesId: string,
+): Promise<JellyfinItem[]> {
+  const params = new URLSearchParams({
+    UserId: session.userId,
+    Fields: 'Overview,PrimaryImageAspectRatio',
+  })
+  const data = await jellyfinFetch<{ Items: JellyfinItem[] }>(
+    session.serverUrl,
+    `/Shows/${seriesId}/Seasons?${params}`,
+    {
+      deviceId: session.deviceId,
+      token: session.accessToken,
+    },
+  )
+  return data.Items ?? []
+}
+
+export async function getEpisodes(
+  session: JellyfinSession,
+  seriesId: string,
+  seasonId?: string,
+): Promise<JellyfinItem[]> {
+  const params = new URLSearchParams({
+    UserId: session.userId,
+    Fields: 'Overview,PrimaryImageAspectRatio,BasicSyncInfo',
+  })
+  if (seasonId) params.set('SeasonId', seasonId)
+
+  const data = await jellyfinFetch<{ Items: JellyfinItem[] }>(
+    session.serverUrl,
+    `/Shows/${seriesId}/Episodes?${params}`,
+    {
+      deviceId: session.deviceId,
+      token: session.accessToken,
+    },
+  )
+  return data.Items ?? []
+}
+
+/** Chromium / Electron-friendly profile so Jellyfin can direct-play or transcode to mp4/hls. */
+function chromiumDeviceProfile() {
+  return {
+    Name: 'Jellyfin Living Room Chromium',
+    MaxStreamingBitrate: 120_000_000,
+    MaxStaticBitrate: 120_000_000,
+    DirectPlayProfiles: [
+      { Type: 'Video', Container: 'mp4,m4v,mov,webm,mkv', VideoCodec: 'h264,hevc,vp8,vp9,av1', AudioCodec: 'aac,mp3,opus,flac,vorbis' },
+      { Type: 'Audio', Container: 'mp3,aac,m4a,flac,opus,ogg,wav', AudioCodec: 'mp3,aac,flac,opus,vorbis' },
+    ],
+    TranscodingProfiles: [
+      {
+        Type: 'Video',
+        Container: 'mp4',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
+        Protocol: 'http',
+        Context: 'Streaming',
+        MaxAudioChannels: '6',
+      },
+      {
+        Type: 'Video',
+        Container: 'ts',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
+        Protocol: 'hls',
+        Context: 'Streaming',
+        MaxAudioChannels: '2',
+      },
+    ],
+    ContainerProfiles: [],
+    CodecProfiles: [],
+    SubtitleProfiles: [
+      { Format: 'vtt', Method: 'External' },
+      { Format: 'srt', Method: 'External' },
+    ],
+  }
+}
+
+function absoluteMediaUrl(session: JellyfinSession, relativeOrAbsolute: string): string {
+  if (/^https?:\/\//i.test(relativeOrAbsolute)) {
+    return relativeOrAbsolute
+  }
+  return `${session.serverUrl}${relativeOrAbsolute.startsWith('/') ? '' : '/'}${relativeOrAbsolute}`
+}
+
+function withApiKey(session: JellyfinSession, url: string): string {
+  const parsed = new URL(url)
+  if (!parsed.searchParams.has('api_key')) {
+    parsed.searchParams.set('api_key', session.accessToken)
+  }
+  if (!parsed.searchParams.has('DeviceId')) {
+    parsed.searchParams.set('DeviceId', session.deviceId)
+  }
+  return parsed.toString()
+}
+
+export async function createPlaybackSession(
+  session: JellyfinSession,
+  item: JellyfinItem,
+  options?: { startPositionTicks?: number },
+): Promise<PlaybackSession> {
+  const startPositionTicks =
+    options?.startPositionTicks ?? item.UserData?.PlaybackPositionTicks ?? 0
+
+  const info = await jellyfinFetch<PlaybackInfoResponse>(
+    session.serverUrl,
+    `/Items/${item.Id}/PlaybackInfo?UserId=${session.userId}`,
+    {
+      method: 'POST',
+      deviceId: session.deviceId,
+      token: session.accessToken,
+      body: {
+        UserId: session.userId,
+        StartTimeTicks: startPositionTicks,
+        AutoOpenLiveStream: true,
+        EnableDirectPlay: true,
+        EnableDirectStream: true,
+        EnableTranscoding: true,
+        DeviceProfile: chromiumDeviceProfile(),
+      },
+    },
+  )
+
+  const source = info.MediaSources?.[0]
+  if (!source) {
+    throw new Error('No playable media source found for this title')
+  }
+
+  let streamUrl: string | null = null
+  let isTranscoding = false
+
+  if (source.TranscodingUrl) {
+    streamUrl = withApiKey(session, absoluteMediaUrl(session, source.TranscodingUrl))
+    isTranscoding = true
+  } else if (source.DirectStreamUrl) {
+    streamUrl = withApiKey(session, absoluteMediaUrl(session, source.DirectStreamUrl))
+  } else {
+    const params = new URLSearchParams({
+      Static: 'true',
+      mediaSourceId: source.Id,
+      deviceId: session.deviceId,
+      api_key: session.accessToken,
+      Tag: source.Id,
+    })
+    const container = source.Container ? `.${source.Container.split(',')[0]}` : ''
+    streamUrl = `${session.serverUrl}/Videos/${item.Id}/stream${container}?${params}`
+  }
+
+  return {
+    item,
+    mediaSourceId: source.Id,
+    playSessionId: info.PlaySessionId,
+    streamUrl,
+    startPositionTicks,
+    isTranscoding,
+  }
+}
+
+export async function reportPlaybackStart(
+  session: JellyfinSession,
+  playback: PlaybackSession,
+): Promise<void> {
+  await jellyfinFetch<void>(session.serverUrl, '/Sessions/Playing', {
+    method: 'POST',
+    deviceId: session.deviceId,
+    token: session.accessToken,
+    body: {
+      ItemId: playback.item.Id,
+      MediaSourceId: playback.mediaSourceId,
+      PlaySessionId: playback.playSessionId,
+      CanSeek: true,
+      IsPaused: false,
+      IsMuted: false,
+      PositionTicks: playback.startPositionTicks,
+      PlayMethod: playback.isTranscoding ? 'Transcode' : 'DirectStream',
+    },
+  })
+}
+
+export async function reportPlaybackProgress(
+  session: JellyfinSession,
+  playback: PlaybackSession,
+  positionTicks: number,
+  isPaused: boolean,
+): Promise<void> {
+  await jellyfinFetch<void>(session.serverUrl, '/Sessions/Playing/Progress', {
+    method: 'POST',
+    deviceId: session.deviceId,
+    token: session.accessToken,
+    body: {
+      ItemId: playback.item.Id,
+      MediaSourceId: playback.mediaSourceId,
+      PlaySessionId: playback.playSessionId,
+      CanSeek: true,
+      IsPaused: isPaused,
+      IsMuted: false,
+      PositionTicks: positionTicks,
+      PlayMethod: playback.isTranscoding ? 'Transcode' : 'DirectStream',
+    },
+  })
+}
+
+export async function reportPlaybackStopped(
+  session: JellyfinSession,
+  playback: PlaybackSession,
+  positionTicks: number,
+): Promise<void> {
+  await jellyfinFetch<void>(session.serverUrl, '/Sessions/Playing/Stopped', {
+    method: 'POST',
+    deviceId: session.deviceId,
+    token: session.accessToken,
+    body: {
+      ItemId: playback.item.Id,
+      MediaSourceId: playback.mediaSourceId,
+      PlaySessionId: playback.playSessionId,
+      PositionTicks: positionTicks,
+    },
+  })
+}
+
+export function ticksToMs(ticks: number): number {
+  return ticks / 10_000
+}
+
+export function msToTicks(ms: number): number {
+  return Math.floor(ms * 10_000)
+}
+
+export function formatRuntime(ticks?: number): string | null {
+  if (!ticks) return null
+  const totalMinutes = Math.round(ticks / 600_000_000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours <= 0) return `${minutes}m`
+  return `${hours}h ${minutes}m`
 }

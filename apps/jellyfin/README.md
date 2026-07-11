@@ -10,8 +10,10 @@ Visual language follows [ElegantFin](https://github.com/lscambo13/ElegantFin) (d
 - Sign in to your Jellyfin server (URL + username/password)
 - Home: libraries, continue watching, recently added
 - Library browse with poster grid
+- In-app title details (seasons / episodes for shows)
+- In-app video playback (direct play or Jellyfin transcode / HLS)
 - Gamepad spatial navigation after login (D-pad / stick, A select, B back)
-- Opens titles in the Jellyfin web client for playback (native player comes next)
+- Playback progress reported back to Jellyfin for Continue Watching
 
 ## Develop
 
@@ -58,8 +60,9 @@ Artifacts land in `apps/jellyfin/release/`:
 | Input | Action |
 |-------|--------|
 | D-pad / left stick | Move focus |
-| A (South) | Select |
+| A (South) | Select / play-pause (in player) |
 | B (East) | Back |
+| LB / RB | Seek −/+ 10s (in player) |
 | Keyboard arrows | Move focus (fallback) |
 | Esc / Backspace | Back |
 
