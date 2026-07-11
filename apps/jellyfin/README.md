@@ -62,8 +62,9 @@ Artifacts land in `apps/jellyfin/release/`:
 | D-pad / left stick | Move focus |
 | A (South) | Select / play-pause (in player) |
 | B (East) | Back |
-| LB / RB | Seek −/+ 10s (in player) |
-| Keyboard arrows | Move focus (fallback) |
+| D-pad left / right | Seek −/+ 10s (in player) |
+| LB / RB | Seek −/+ 30s (in player) |
+| Keyboard arrows | Move focus (fallback) / seek ±10s in player |
 | Esc / Backspace | Back |
 
 Login fields stay mouse/keyboard oriented on purpose.

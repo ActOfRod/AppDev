@@ -116,6 +116,13 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   }, [onBack])
 
   useEffect(() => {
+    const seekBy = (seconds: number) => {
+      const video = videoRef.current
+      if (!video) return
+      const next = video.currentTime + seconds
+      video.currentTime = Math.min(video.duration || next, Math.max(0, next))
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       const video = videoRef.current
       if (!video) return
@@ -130,11 +137,19 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           break
         case 'ArrowLeft':
           event.preventDefault()
-          video.currentTime = Math.max(0, video.currentTime - 10)
+          seekBy(-10)
           break
         case 'ArrowRight':
           event.preventDefault()
-          video.currentTime = Math.min(video.duration || video.currentTime, video.currentTime + 10)
+          seekBy(10)
+          break
+        case '[':
+          event.preventDefault()
+          seekBy(-30)
+          break
+        case ']':
+          event.preventDefault()
+          seekBy(30)
           break
         case 'Escape':
           event.preventDefault()
@@ -161,16 +176,16 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       const pad = pads.find((p) => p && p.connected)
       if (!video || !pad) return
 
-      // A play/pause, B back, LB/RB seek
+      // A play/pause, B back, D-pad L/R ±10s, LB/RB ±30s
       if (justPressed(pad, 0)) {
         if (video.paused) void video.play()
         else video.pause()
       }
       if (justPressed(pad, 1)) onBack()
-      if (justPressed(pad, 4)) video.currentTime = Math.max(0, video.currentTime - 10)
-      if (justPressed(pad, 5)) {
-        video.currentTime = Math.min(video.duration || video.currentTime, video.currentTime + 10)
-      }
+      if (justPressed(pad, 14)) seekBy(-10)
+      if (justPressed(pad, 15)) seekBy(10)
+      if (justPressed(pad, 4)) seekBy(-30)
+      if (justPressed(pad, 5)) seekBy(30)
     }
     frame = requestAnimationFrame(poll)
 
@@ -235,7 +250,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       </div>
 
       <p className="hint player-hint">
-        Controller: A play/pause · B back · LB/RB ±10s
+        Controller: A play/pause · B back · D-pad ±10s · LB/RB ±30s
         {paused ? ' · Paused' : ''}
       </p>
     </div>
