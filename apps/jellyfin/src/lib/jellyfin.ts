@@ -265,15 +265,16 @@ export async function getResumeItems(session: JellyfinSession): Promise<Jellyfin
 
 export async function getLatestItems(
   session: JellyfinSession,
-  parentId?: string,
+  options?: { parentId?: string; includeItemTypes?: string; limit?: number },
 ): Promise<JellyfinItem[]> {
   const params = new URLSearchParams({
-    Limit: '24',
+    Limit: String(options?.limit ?? 24),
     Fields: 'PrimaryImageAspectRatio,Overview,ProductionYear',
     ImageTypeLimit: '1',
     EnableImageTypes: 'Primary,Backdrop,Logo',
   })
-  if (parentId) params.set('ParentId', parentId)
+  if (options?.parentId) params.set('ParentId', options.parentId)
+  if (options?.includeItemTypes) params.set('IncludeItemTypes', options.includeItemTypes)
 
   return jellyfinFetch<JellyfinItem[]>(
     session.serverUrl,
@@ -283,6 +284,54 @@ export async function getLatestItems(
       token: session.accessToken,
     },
   )
+}
+
+export function isCollectionsView(item: JellyfinItem): boolean {
+  const collectionType = (item.CollectionType ?? '').toLowerCase()
+  return collectionType === 'boxsets' || item.Name.toLowerCase() === 'collections'
+}
+
+export function splitLibraryViews(views: JellyfinItem[]): {
+  mediaLibraries: JellyfinItem[]
+  collectionsLibrary: JellyfinItem | null
+} {
+  let collectionsLibrary: JellyfinItem | null = null
+  const mediaLibraries: JellyfinItem[] = []
+  for (const view of views) {
+    if (isCollectionsView(view)) {
+      collectionsLibrary = view
+    } else {
+      mediaLibraries.push(view)
+    }
+  }
+  return { mediaLibraries, collectionsLibrary }
+}
+
+export async function getCollectionItems(
+  session: JellyfinSession,
+  collectionsLibraryId?: string,
+): Promise<JellyfinItem[]> {
+  const params = new URLSearchParams({
+    IncludeItemTypes: 'BoxSet',
+    Recursive: 'true',
+    SortBy: 'SortName',
+    SortOrder: 'Ascending',
+    Fields: 'PrimaryImageAspectRatio,Overview,ProductionYear',
+    ImageTypeLimit: '1',
+    EnableImageTypes: 'Primary,Backdrop,Logo',
+    Limit: '48',
+  })
+  if (collectionsLibraryId) params.set('ParentId', collectionsLibraryId)
+
+  const data = await jellyfinFetch<{ Items: JellyfinItem[] }>(
+    session.serverUrl,
+    `/Users/${session.userId}/Items?${params}`,
+    {
+      deviceId: session.deviceId,
+      token: session.accessToken,
+    },
+  )
+  return data.Items ?? []
 }
 
 export async function getLibraryItems(
