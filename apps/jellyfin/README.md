@@ -23,7 +23,17 @@ npm run dev
 
 ## Build a Windows app for Steam
 
-On a Windows machine (or CI with Windows targets):
+### GitHub Actions (recommended)
+
+The workflow [Build Jellyfin Windows](../../.github/workflows/build-jellyfin-windows.yml) builds portable + NSIS `.exe` files on `windows-latest`.
+
+- Runs on pushes/PRs that touch `apps/jellyfin/`
+- Can also be started manually via **Actions → Build Jellyfin Windows → Run workflow**
+- Download the `jellyfin-living-room-windows` artifact from the finished run
+
+### Local build
+
+On a Windows machine:
 
 ```bash
 cd apps/jellyfin
