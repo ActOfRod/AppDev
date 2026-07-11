@@ -114,7 +114,7 @@ export function DetailScreen({
             )}
 
             <div className="detail-copy">
-              <p className="brand">Jellyfin</p>
+              <p className="brand">ValveFin</p>
               <h1>{item.Name}</h1>
               {item.SeriesName && item.Type === 'Episode' ? (
                 <p className="detail-series">

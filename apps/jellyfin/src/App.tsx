@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useControllerNavigation } from './hooks/useControllerNavigation'
+import { focusFirstFocusable, useControllerNavigation } from './hooks/useControllerNavigation'
 import {
   authenticate,
   clearSession,
@@ -31,6 +31,14 @@ function App() {
   )
 
   useControllerNavigation(view.screen !== 'login' && view.screen !== 'player')
+
+  useEffect(() => {
+    if (view.screen === 'login' || view.screen === 'player') return
+    const id = window.setTimeout(() => {
+      focusFirstFocusable()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [view.screen])
 
   useEffect(() => {
     const onBack = () => {
@@ -147,8 +155,8 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => v
     <div className="login-shell">
       <div className="login-glow" aria-hidden />
       <form className="login-card" onSubmit={submit}>
-        <p className="brand">Jellyfin</p>
-        <h1>Living Room</h1>
+        <p className="brand">ValveFin</p>
+        <h1>Sign in</h1>
         <p className="lede">Sign in with keyboard and mouse. After that, use your controller.</p>
 
         <label>
@@ -242,7 +250,7 @@ function HomeScreen({
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <p className="brand">Jellyfin</p>
+          <p className="brand">ValveFin</p>
           <h1>Welcome back, {session.userName}</h1>
         </div>
         <div className="topbar-actions">
@@ -313,7 +321,7 @@ function HomeScreen({
         </section>
       ) : null}
 
-      <p className="hint">Controller: D-pad / stick move · A select · B back</p>
+      <p className="hint">Controller: D-pad / stick move · A select · B back · Y fullscreen</p>
     </div>
   )
 }
@@ -373,7 +381,7 @@ function LibraryScreen({
               <button type="button" className="ghost" onClick={onBack} autoFocus>
                 ← Back
               </button>
-              <p className="brand">Jellyfin</p>
+              <p className="brand">ValveFin</p>
               <h1>{library.Name}</h1>
             </div>
             <div className="topbar-actions">

@@ -37,6 +37,15 @@ export type JellyfinItem = {
   MediaType?: string
 }
 
+export type SubtitleTrack = {
+  index: number
+  label: string
+  language?: string
+  url: string
+  isDefault?: boolean
+  isForced?: boolean
+}
+
 export type PlaybackSession = {
   item: JellyfinItem
   mediaSourceId: string
@@ -44,6 +53,20 @@ export type PlaybackSession = {
   streamUrl: string
   startPositionTicks: number
   isTranscoding: boolean
+  subtitles: SubtitleTrack[]
+}
+
+type MediaStream = {
+  Index: number
+  Type: string
+  Codec?: string
+  Language?: string
+  DisplayTitle?: string
+  IsDefault?: boolean
+  IsForced?: boolean
+  IsTextSubtitleStream?: boolean
+  SupportsExternalStream?: boolean
+  DeliveryUrl?: string
 }
 
 type MediaSource = {
@@ -55,6 +78,7 @@ type MediaSource = {
   SupportsDirectPlay?: boolean
   SupportsDirectStream?: boolean
   SupportsTranscoding?: boolean
+  MediaStreams?: MediaStream[]
 }
 
 type PlaybackInfoResponse = {
@@ -71,7 +95,7 @@ type AuthResponse = {
   }
 }
 
-const CLIENT_NAME = 'Jellyfin Living Room'
+const CLIENT_NAME = 'ValveFin'
 const CLIENT_VERSION = '0.1.0'
 const STORAGE_KEY = 'jellyfin.livingroom.session'
 
@@ -372,7 +396,7 @@ export async function getEpisodes(
 /** Chromium / Electron-friendly profile so Jellyfin can direct-play or transcode to mp4/hls. */
 function chromiumDeviceProfile() {
   return {
-    Name: 'Jellyfin Living Room Chromium',
+    Name: 'ValveFin Chromium',
     MaxStreamingBitrate: 120_000_000,
     MaxStaticBitrate: 120_000_000,
     DirectPlayProfiles: [
@@ -406,6 +430,53 @@ function chromiumDeviceProfile() {
       { Format: 'srt', Method: 'External' },
     ],
   }
+}
+
+function isTextSubtitle(stream: MediaStream): boolean {
+  if (stream.Type !== 'Subtitle') return false
+  const codec = (stream.Codec ?? '').toLowerCase()
+  if (['pgssub', 'pgs', 'dvdsub', 'dvd_subtitle', 'vobsub', 'hdmv_pgs_subtitle'].includes(codec)) {
+    return false
+  }
+  if (stream.IsTextSubtitleStream === false && stream.SupportsExternalStream !== true) {
+    return false
+  }
+  return true
+}
+
+function subtitleStreamUrl(
+  session: JellyfinSession,
+  itemId: string,
+  mediaSourceId: string,
+  stream: MediaStream,
+): string {
+  if (stream.DeliveryUrl && !/^[a-zA-Z]:\\/.test(stream.DeliveryUrl) && !stream.DeliveryUrl.startsWith('/')) {
+    // Ignore Windows filesystem paths returned for some external subs
+  }
+  if (stream.DeliveryUrl?.startsWith('/')) {
+    return withApiKey(session, absoluteMediaUrl(session, stream.DeliveryUrl))
+  }
+  return withApiKey(
+    session,
+    `${session.serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/Stream.vtt`,
+  )
+}
+
+function collectSubtitles(
+  session: JellyfinSession,
+  itemId: string,
+  source: MediaSource,
+): SubtitleTrack[] {
+  return (source.MediaStreams ?? [])
+    .filter(isTextSubtitle)
+    .map((stream) => ({
+      index: stream.Index,
+      label: stream.DisplayTitle || stream.Language || `Subtitle ${stream.Index}`,
+      language: stream.Language,
+      url: subtitleStreamUrl(session, itemId, source.Id, stream),
+      isDefault: stream.IsDefault,
+      isForced: stream.IsForced,
+    }))
 }
 
 function absoluteMediaUrl(session: JellyfinSession, relativeOrAbsolute: string): string {
@@ -485,6 +556,7 @@ export async function createPlaybackSession(
     streamUrl,
     startPositionTicks,
     isTranscoding,
+    subtitles: collectSubtitles(session, item.Id, source),
   }
 }
 
@@ -565,4 +637,20 @@ export function formatRuntime(ticks?: number): string | null {
   const minutes = totalMinutes % 60
   if (hours <= 0) return `${minutes}m`
   return `${hours}h ${minutes}m`
+}
+
+export function formatClockTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+export function formatPlayerTime(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00'
+  const seconds = Math.floor(totalSeconds)
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
 }

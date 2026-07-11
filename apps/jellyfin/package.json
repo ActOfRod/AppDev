@@ -1,8 +1,8 @@
 {
-  "name": "jellyfin-client",
+  "name": "valvefin",
   "private": true,
   "version": "0.1.0",
-  "description": "Controller-friendly Jellyfin client for Steam Big Picture",
+  "description": "ValveFin — controller-friendly Jellyfin client for Steam Big Picture",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -12,8 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
   "build": {
-    "appId": "com.appdev.jellyfin",
-    "productName": "Jellyfin Living Room",
+    "appId": "com.appdev.valvefin",
+    "productName": "ValveFin",
+    "executableName": "ValveFin",
     "directories": {
       "output": "release"
     },
@@ -23,14 +24,18 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
-      ],
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+        "portable",
+        "nsis"
+      ]
+    },
+    "portable": {
+      "artifactName": "ValveFin.exe"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "ValveFin-Setup-${version}.exe",
+      "shortcutName": "ValveFin"
     }
   },
   "dependencies": {
