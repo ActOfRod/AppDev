@@ -1,0 +1,52 @@
+name: Build Jellyfin Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/jellyfin/**'
+      - '.github/workflows/build-jellyfin-windows.yml'
+  pull_request:
+    paths:
+      - 'apps/jellyfin/**'
+      - '.github/workflows/build-jellyfin-windows.yml'
+
+defaults:
+  run:
+    working-directory: apps/jellyfin
+
+jobs:
+  build-windows:
+    name: Build Windows .exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/jellyfin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows packages
+        env:
+          # Unsigned local/Steam builds — skip code-signing discovery in CI
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run pack:win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jellyfin-living-room-windows
+          path: apps/jellyfin/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
