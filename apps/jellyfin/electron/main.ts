@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 
 process.env.DIST = path.join(__dirname, '../dist')
@@ -39,6 +39,17 @@ function createWindow() {
     mainWindow.loadFile(path.join(process.env.DIST!, 'index.html'))
   }
 }
+
+ipcMain.handle('window:toggle-fullscreen', () => {
+  if (!mainWindow) return false
+  const next = !mainWindow.isFullScreen()
+  mainWindow.setFullScreen(next)
+  return next
+})
+
+ipcMain.handle('window:is-fullscreen', () => {
+  return mainWindow?.isFullScreen() ?? false
+})
 
 app.whenReady().then(() => {
   createWindow()

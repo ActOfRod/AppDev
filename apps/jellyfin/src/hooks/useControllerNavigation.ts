@@ -4,6 +4,7 @@ const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 function isVisible(el: HTMLElement): boolean {
+  if (!el.isConnected) return false
   const style = window.getComputedStyle(el)
   if (style.visibility === 'hidden' || style.display === 'none') return false
   const rect = el.getBoundingClientRect()
@@ -12,6 +13,19 @@ function isVisible(el: HTMLElement): boolean {
 
 function getFocusable(root: ParentNode = document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isVisible)
+}
+
+function getActiveFocusable(): HTMLElement | null {
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active.matches(FOCUSABLE) && isVisible(active)) {
+    return active
+  }
+  return null
+}
+
+export function focusFirstFocusable(): void {
+  const first = getFocusable()[0]
+  first?.focus()
 }
 
 function centerOf(el: HTMLElement) {
@@ -77,10 +91,9 @@ function findNeighbor(current: HTMLElement, direction: Direction): HTMLElement |
 }
 
 function moveFocus(direction: Direction) {
-  const active = document.activeElement
-  if (!(active instanceof HTMLElement) || !active.matches(FOCUSABLE)) {
-    const first = getFocusable()[0]
-    first?.focus()
+  const active = getActiveFocusable()
+  if (!active) {
+    focusFirstFocusable()
     return
   }
 
@@ -89,23 +102,64 @@ function moveFocus(direction: Direction) {
 }
 
 function activateFocused() {
-  const active = document.activeElement
-  if (active instanceof HTMLElement) {
+  const active = getActiveFocusable()
+  if (active) {
     active.click()
+    return
+  }
+  focusFirstFocusable()
+}
+
+async function toggleFullscreen() {
+  try {
+    if (window.jellyfinDesktop?.toggleFullscreen) {
+      await window.jellyfinDesktop.toggleFullscreen()
+      return
+    }
+  } catch {
+    // fall through to browser fullscreen
+  }
+
+  if (document.fullscreenElement) {
+    await document.exitFullscreen().catch(() => undefined)
+  } else {
+    await document.documentElement.requestFullscreen().catch(() => undefined)
+  }
+}
+
+function seedButtonState(target: Record<number, boolean>) {
+  const pads = navigator.getGamepads?.() ?? []
+  const pad = pads.find((p) => p && p.connected)
+  if (!pad) return
+  for (let i = 0; i < pad.buttons.length; i += 1) {
+    target[i] = Boolean(pad.buttons[i]?.pressed)
   }
 }
 
 /**
  * Spatial navigation for couch / Steam Big Picture use.
  * Keyboard arrows work as a fallback; gamepad D-pad / left stick move focus.
- * A / South activates; B / East triggers browser history back when possible.
+ * A / South activates; B / East goes back; Y / North toggles fullscreen.
  */
 export function useControllerNavigation(enabled: boolean) {
   const buttonState = useRef<Record<number, boolean>>({})
   const stickCooldown = useRef(0)
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      buttonState.current = {}
+      return
+    }
+
+    // Avoid phantom presses from buttons still held after leaving the player.
+    seedButtonState(buttonState.current)
+    // Recover focus if the previous screen left a detached activeElement.
+    if (!getActiveFocusable()) {
+      // Wait a frame so the new screen's autoFocus/layout can settle.
+      requestAnimationFrame(() => {
+        if (!getActiveFocusable()) focusFirstFocusable()
+      })
+    }
 
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target
@@ -137,12 +191,14 @@ export function useControllerNavigation(enabled: boolean) {
         case 'Enter':
           // native button activation is fine
           break
+        case 'F11':
+          event.preventDefault()
+          void toggleFullscreen()
+          break
         case 'Escape':
         case 'Backspace':
-          if (window.history.length > 1) {
-            event.preventDefault()
-            window.dispatchEvent(new CustomEvent('jellyfin:back'))
-          }
+          event.preventDefault()
+          window.dispatchEvent(new CustomEvent('jellyfin:back'))
           break
       }
     }
@@ -176,6 +232,10 @@ export function useControllerNavigation(enabled: boolean) {
       // B / East
       if (justPressed(1)) {
         window.dispatchEvent(new CustomEvent('jellyfin:back'))
+      }
+      // Y / North — fullscreen
+      if (justPressed(3)) {
+        void toggleFullscreen()
       }
 
       // Left stick with cooldown

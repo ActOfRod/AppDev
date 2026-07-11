@@ -123,6 +123,22 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       video.currentTime = Math.min(video.duration || next, Math.max(0, next))
     }
 
+    const toggleFullscreen = async () => {
+      try {
+        if (window.jellyfinDesktop?.toggleFullscreen) {
+          await window.jellyfinDesktop.toggleFullscreen()
+          return
+        }
+      } catch {
+        // fall through
+      }
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => undefined)
+      } else {
+        await document.documentElement.requestFullscreen().catch(() => undefined)
+      }
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       const video = videoRef.current
       if (!video) return
@@ -151,6 +167,10 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           event.preventDefault()
           seekBy(30)
           break
+        case 'F11':
+          event.preventDefault()
+          void toggleFullscreen()
+          break
         case 'Escape':
           event.preventDefault()
           onBack()
@@ -162,8 +182,16 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
     let frame = 0
     const buttonState: Record<number, boolean> = {}
-    const justPressed = (pad: Gamepad, index: number) => {
-      const isDown = Boolean(pad.buttons[index]?.pressed)
+    const pads = navigator.getGamepads?.() ?? []
+    const pad = pads.find((p) => p && p.connected)
+    if (pad) {
+      for (let i = 0; i < pad.buttons.length; i += 1) {
+        buttonState[i] = Boolean(pad.buttons[i]?.pressed)
+      }
+    }
+
+    const justPressed = (gamepad: Gamepad, index: number) => {
+      const isDown = Boolean(gamepad.buttons[index]?.pressed)
       const wasDown = buttonState[index] ?? false
       buttonState[index] = isDown
       return isDown && !wasDown
@@ -172,26 +200,31 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     const poll = () => {
       frame = requestAnimationFrame(poll)
       const video = videoRef.current
-      const pads = navigator.getGamepads?.() ?? []
-      const pad = pads.find((p) => p && p.connected)
-      if (!video || !pad) return
+      const currentPads = navigator.getGamepads?.() ?? []
+      const currentPad = currentPads.find((p) => p && p.connected)
+      if (!video || !currentPad) return
 
-      // A play/pause, B back, D-pad L/R ±10s, LB/RB ±30s
-      if (justPressed(pad, 0)) {
+      // A play/pause, B back, Y fullscreen, D-pad L/R ±10s, LB/RB ±30s
+      if (justPressed(currentPad, 0)) {
         if (video.paused) void video.play()
         else video.pause()
       }
-      if (justPressed(pad, 1)) onBack()
-      if (justPressed(pad, 14)) seekBy(-10)
-      if (justPressed(pad, 15)) seekBy(10)
-      if (justPressed(pad, 4)) seekBy(-30)
-      if (justPressed(pad, 5)) seekBy(30)
+      if (justPressed(currentPad, 1)) onBack()
+      if (justPressed(currentPad, 3)) void toggleFullscreen()
+      if (justPressed(currentPad, 14)) seekBy(-10)
+      if (justPressed(currentPad, 15)) seekBy(10)
+      if (justPressed(currentPad, 4)) seekBy(-30)
+      if (justPressed(currentPad, 5)) seekBy(30)
     }
     frame = requestAnimationFrame(poll)
 
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       cancelAnimationFrame(frame)
+      // Drop focus so browse screens don't inherit a detached activeElement.
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+      }
     }
   }, [onBack])
 
@@ -250,7 +283,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       </div>
 
       <p className="hint player-hint">
-        Controller: A play/pause · B back · D-pad ±10s · LB/RB ±30s
+        Controller: A play/pause · B back · Y fullscreen · D-pad ±10s · LB/RB ±30s
         {paused ? ' · Paused' : ''}
       </p>
     </div>

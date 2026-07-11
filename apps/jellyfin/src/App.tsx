@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useControllerNavigation } from './hooks/useControllerNavigation'
+import { focusFirstFocusable, useControllerNavigation } from './hooks/useControllerNavigation'
 import {
   authenticate,
   clearSession,
@@ -31,6 +31,14 @@ function App() {
   )
 
   useControllerNavigation(view.screen !== 'login' && view.screen !== 'player')
+
+  useEffect(() => {
+    if (view.screen === 'login' || view.screen === 'player') return
+    const id = window.setTimeout(() => {
+      focusFirstFocusable()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [view.screen])
 
   useEffect(() => {
     const onBack = () => {
@@ -313,7 +321,7 @@ function HomeScreen({
         </section>
       ) : null}
 
-      <p className="hint">Controller: D-pad / stick move · A select · B back</p>
+      <p className="hint">Controller: D-pad / stick move · A select · B back · Y fullscreen</p>
     </div>
   )
 }
