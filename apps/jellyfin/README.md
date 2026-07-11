@@ -65,12 +65,14 @@ Artifacts land in `apps/jellyfin/release/`:
 | D-pad / left stick | Move focus |
 | A (South) | Select / play-pause (in player) |
 | B (East) | Back / hide player controls |
-| X (West) | Subtitle menu (in player) |
+| X (West) | Subtitle menu (D-pad up/down, A select) |
 | Y (North) | Toggle fullscreen |
 | D-pad left / right | Seek −/+ 10s (in player) |
+| D-pad up / down | Move in open track menu |
 | LB / RB | Seek −/+ 30s (in player) |
 | Keyboard arrows | Move focus (fallback) / seek ±10s in player |
 | C | Subtitle menu (in player) |
+| A key | Audio track menu (in player) |
 | F11 | Toggle fullscreen |
 | Esc / Backspace | Back |
 

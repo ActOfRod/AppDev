@@ -46,6 +46,13 @@ export type SubtitleTrack = {
   isForced?: boolean
 }
 
+export type AudioTrack = {
+  index: number
+  label: string
+  language?: string
+  isDefault?: boolean
+}
+
 export type PlaybackSession = {
   item: JellyfinItem
   mediaSourceId: string
@@ -54,6 +61,8 @@ export type PlaybackSession = {
   startPositionTicks: number
   isTranscoding: boolean
   subtitles: SubtitleTrack[]
+  audioTracks: AudioTrack[]
+  selectedAudioIndex: number | null
 }
 
 type MediaStream = {
@@ -67,6 +76,7 @@ type MediaStream = {
   IsTextSubtitleStream?: boolean
   SupportsExternalStream?: boolean
   DeliveryUrl?: string
+  IsHearingImpaired?: boolean
 }
 
 type MediaSource = {
@@ -444,6 +454,24 @@ function isTextSubtitle(stream: MediaStream): boolean {
   return true
 }
 
+function absoluteMediaUrl(session: JellyfinSession, relativeOrAbsolute: string): string {
+  if (/^https?:\/\//i.test(relativeOrAbsolute)) {
+    return relativeOrAbsolute
+  }
+  return `${session.serverUrl}${relativeOrAbsolute.startsWith('/') ? '' : '/'}${relativeOrAbsolute}`
+}
+
+function withApiKey(session: JellyfinSession, url: string): string {
+  const parsed = new URL(url)
+  if (!parsed.searchParams.has('api_key')) {
+    parsed.searchParams.set('api_key', session.accessToken)
+  }
+  if (!parsed.searchParams.has('DeviceId')) {
+    parsed.searchParams.set('DeviceId', session.deviceId)
+  }
+  return parsed.toString()
+}
+
 function subtitleStreamUrl(
   session: JellyfinSession,
   itemId: string,
@@ -479,56 +507,67 @@ function collectSubtitles(
     }))
 }
 
-function absoluteMediaUrl(session: JellyfinSession, relativeOrAbsolute: string): string {
-  if (/^https?:\/\//i.test(relativeOrAbsolute)) {
-    return relativeOrAbsolute
-  }
-  return `${session.serverUrl}${relativeOrAbsolute.startsWith('/') ? '' : '/'}${relativeOrAbsolute}`
+function streamLabel(stream: MediaStream): string {
+  return `${stream.DisplayTitle ?? ''} ${stream.Language ?? ''}`.toLowerCase()
 }
 
-function withApiKey(session: JellyfinSession, url: string): string {
-  const parsed = new URL(url)
-  if (!parsed.searchParams.has('api_key')) {
-    parsed.searchParams.set('api_key', session.accessToken)
-  }
-  if (!parsed.searchParams.has('DeviceId')) {
-    parsed.searchParams.set('DeviceId', session.deviceId)
-  }
-  return parsed.toString()
-}
-
-export async function createPlaybackSession(
-  session: JellyfinSession,
-  item: JellyfinItem,
-  options?: { startPositionTicks?: number },
-): Promise<PlaybackSession> {
-  const startPositionTicks =
-    options?.startPositionTicks ?? item.UserData?.PlaybackPositionTicks ?? 0
-
-  const info = await jellyfinFetch<PlaybackInfoResponse>(
-    session.serverUrl,
-    `/Items/${item.Id}/PlaybackInfo?UserId=${session.userId}`,
-    {
-      method: 'POST',
-      deviceId: session.deviceId,
-      token: session.accessToken,
-      body: {
-        UserId: session.userId,
-        StartTimeTicks: startPositionTicks,
-        AutoOpenLiveStream: true,
-        EnableDirectPlay: true,
-        EnableDirectStream: true,
-        EnableTranscoding: true,
-        DeviceProfile: chromiumDeviceProfile(),
-      },
-    },
+function isCommentaryOrSpecialAudio(stream: MediaStream): boolean {
+  const label = streamLabel(stream)
+  return /commentary|director.?comment|description|narrat|visual.?impaired|hearing.?impaired|\badi\b/.test(
+    label,
   )
+}
 
-  const source = info.MediaSources?.[0]
-  if (!source) {
-    throw new Error('No playable media source found for this title')
-  }
+function isEnglishLanguage(stream: MediaStream): boolean {
+  const lang = (stream.Language ?? '').toLowerCase()
+  const title = (stream.DisplayTitle ?? '').toLowerCase()
+  return (
+    lang === 'eng' ||
+    lang === 'en' ||
+    lang.startsWith('en-') ||
+    lang.startsWith('en_') ||
+    /\benglish\b/.test(title)
+  )
+}
 
+function collectAudioTracks(source: MediaSource): AudioTrack[] {
+  return (source.MediaStreams ?? [])
+    .filter((stream) => stream.Type === 'Audio')
+    .map((stream) => ({
+      index: stream.Index,
+      label: stream.DisplayTitle || stream.Language || `Audio ${stream.Index}`,
+      language: stream.Language,
+      isDefault: stream.IsDefault,
+    }))
+}
+
+/** Prefer English main audio; skip commentary / descriptive tracks when possible. */
+export function pickPreferredAudioIndex(
+  streams: Array<Pick<MediaStream, 'Index' | 'Type' | 'Language' | 'DisplayTitle' | 'IsDefault'>>,
+): number | null {
+  const audio = streams.filter((stream) => stream.Type === 'Audio')
+  if (audio.length === 0) return null
+
+  const englishMain = audio.find(
+    (stream) => isEnglishLanguage(stream) && !isCommentaryOrSpecialAudio(stream),
+  )
+  if (englishMain) return englishMain.Index
+
+  const anyEnglish = audio.find((stream) => isEnglishLanguage(stream))
+  if (anyEnglish) return anyEnglish.Index
+
+  const nonSpecial = audio.find((stream) => !isCommentaryOrSpecialAudio(stream))
+  if (nonSpecial) return nonSpecial.Index
+
+  return audio[0]?.Index ?? null
+}
+
+function buildStreamUrl(
+  session: JellyfinSession,
+  itemId: string,
+  source: MediaSource,
+  audioStreamIndex: number | null,
+): { streamUrl: string; isTranscoding: boolean } {
   let streamUrl: string | null = null
   let isTranscoding = false
 
@@ -545,9 +584,90 @@ export async function createPlaybackSession(
       api_key: session.accessToken,
       Tag: source.Id,
     })
+    if (audioStreamIndex != null) {
+      params.set('AudioStreamIndex', String(audioStreamIndex))
+    }
     const container = source.Container ? `.${source.Container.split(',')[0]}` : ''
-    streamUrl = `${session.serverUrl}/Videos/${item.Id}/stream${container}?${params}`
+    streamUrl = `${session.serverUrl}/Videos/${itemId}/stream${container}?${params}`
   }
+
+  if (audioStreamIndex != null) {
+    const parsed = new URL(streamUrl)
+    if (!parsed.searchParams.has('AudioStreamIndex')) {
+      parsed.searchParams.set('AudioStreamIndex', String(audioStreamIndex))
+      streamUrl = parsed.toString()
+    }
+  }
+
+  return { streamUrl, isTranscoding }
+}
+
+async function requestPlaybackInfo(
+  session: JellyfinSession,
+  itemId: string,
+  options: {
+    startPositionTicks: number
+    audioStreamIndex?: number | null
+  },
+): Promise<PlaybackInfoResponse> {
+  return jellyfinFetch<PlaybackInfoResponse>(
+    session.serverUrl,
+    `/Items/${itemId}/PlaybackInfo?UserId=${session.userId}`,
+    {
+      method: 'POST',
+      deviceId: session.deviceId,
+      token: session.accessToken,
+      body: {
+        UserId: session.userId,
+        StartTimeTicks: options.startPositionTicks,
+        AutoOpenLiveStream: true,
+        EnableDirectPlay: true,
+        EnableDirectStream: true,
+        EnableTranscoding: true,
+        DeviceProfile: chromiumDeviceProfile(),
+        ...(options.audioStreamIndex != null
+          ? { AudioStreamIndex: options.audioStreamIndex }
+          : {}),
+      },
+    },
+  )
+}
+
+export async function createPlaybackSession(
+  session: JellyfinSession,
+  item: JellyfinItem,
+  options?: { startPositionTicks?: number; audioStreamIndex?: number | null },
+): Promise<PlaybackSession> {
+  const startPositionTicks =
+    options?.startPositionTicks ?? item.UserData?.PlaybackPositionTicks ?? 0
+
+  const probe = await requestPlaybackInfo(session, item.Id, { startPositionTicks })
+  const probeSource = probe.MediaSources?.[0]
+  if (!probeSource) {
+    throw new Error('No playable media source found for this title')
+  }
+
+  const audioTracks = collectAudioTracks(probeSource)
+  const selectedAudioIndex =
+    options?.audioStreamIndex !== undefined
+      ? options.audioStreamIndex
+      : pickPreferredAudioIndex(probeSource.MediaStreams ?? [])
+
+  const info =
+    selectedAudioIndex != null
+      ? await requestPlaybackInfo(session, item.Id, {
+          startPositionTicks,
+          audioStreamIndex: selectedAudioIndex,
+        })
+      : probe
+
+  const source = info.MediaSources?.[0] ?? probeSource
+  const { streamUrl, isTranscoding } = buildStreamUrl(
+    session,
+    item.Id,
+    source,
+    selectedAudioIndex,
+  )
 
   return {
     item,
@@ -557,6 +677,8 @@ export async function createPlaybackSession(
     startPositionTicks,
     isTranscoding,
     subtitles: collectSubtitles(session, item.Id, source),
+    audioTracks: audioTracks.length > 0 ? audioTracks : collectAudioTracks(source),
+    selectedAudioIndex,
   }
 }
 
