@@ -86,6 +86,55 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     next?.focus()
   }
 
+  const getOsdControls = () =>
+    Array.from(
+      osdRef.current?.querySelectorAll<HTMLElement>(
+        '.player-osd button:not([disabled]), .player-osd input[type="range"]',
+      ) ?? [],
+    ).filter((el) => el.offsetParent !== null && !el.closest('.subtitle-menu, .audio-menu'))
+
+  const focusOsdControl = (direction: 'left' | 'right' | 'up' | 'down') => {
+    showOsd(true)
+    const controls = getOsdControls()
+    if (controls.length === 0) return
+    const active = document.activeElement
+    const index = active instanceof HTMLElement ? controls.indexOf(active) : -1
+    if (index < 0) {
+      controls[0]?.focus()
+      return
+    }
+    const delta = direction === 'left' || direction === 'up' ? -1 : 1
+    controls[(index + delta + controls.length) % controls.length]?.focus()
+  }
+
+  const activateFocusedControl = () => {
+    const active = document.activeElement
+    if (
+      active instanceof HTMLElement &&
+      active.tagName === 'BUTTON' &&
+      active.closest('.subtitle-menu, .audio-menu, .player-osd')
+    ) {
+      active.click()
+      return true
+    }
+    if (openMenuRef.current === 'subtitles') {
+      focusMenu('subtitles')
+      return true
+    }
+    if (openMenuRef.current === 'audio') {
+      focusMenu('audio')
+      return true
+    }
+    if (osdVisibleRef.current) {
+      const focused = getOsdControls().find((el) => el === document.activeElement)
+      if (focused) {
+        if (focused instanceof HTMLButtonElement) focused.click()
+        return true
+      }
+    }
+    return false
+  }
+
   const openTrackMenu = (menu: Exclude<OpenMenu, 'none'>) => {
     setOpenMenu((current) => {
       const next = current === menu ? 'none' : menu
@@ -289,27 +338,6 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   }, [paused, openMenu])
 
   useEffect(() => {
-    const activateFocusedMenuItem = () => {
-      const active = document.activeElement
-      if (
-        active instanceof HTMLElement &&
-        active.tagName === 'BUTTON' &&
-        active.closest('.subtitle-menu, .audio-menu')
-      ) {
-        active.click()
-        return true
-      }
-      if (openMenuRef.current === 'subtitles') {
-        focusMenu('subtitles')
-        return true
-      }
-      if (openMenuRef.current === 'audio') {
-        focusMenu('audio')
-        return true
-      }
-      return false
-    }
-
     const onKeyDown = (event: KeyboardEvent) => {
       const video = videoRef.current
       if (!video) return
@@ -319,30 +347,37 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
         case 'k':
         case 'K':
           event.preventDefault()
-          if (openMenuRef.current !== 'none') activateFocusedMenuItem()
-          else togglePlay()
+          if (openMenuRef.current !== 'none' || osdVisibleRef.current) {
+            if (!activateFocusedControl()) togglePlay()
+          } else togglePlay()
           break
         case 'ArrowLeft':
           event.preventDefault()
-          seekBy(-10)
+          if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, -1)
+          else if (osdVisibleRef.current) focusOsdControl('left')
+          else seekBy(-10)
           break
         case 'ArrowRight':
           event.preventDefault()
-          seekBy(10)
+          if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, 1)
+          else if (osdVisibleRef.current) focusOsdControl('right')
+          else seekBy(10)
           break
         case 'ArrowUp':
           event.preventDefault()
           if (openMenuRef.current === 'subtitles') focusMenu('subtitles', -1)
           else if (openMenuRef.current === 'audio') focusMenu('audio', -1)
+          else if (osdVisibleRef.current) focusOsdControl('up')
           else {
             showOsd(true)
-            osdRef.current?.querySelector<HTMLElement>('button, input')?.focus()
+            getOsdControls()[0]?.focus()
           }
           break
         case 'ArrowDown':
           event.preventDefault()
           if (openMenuRef.current === 'subtitles') focusMenu('subtitles', 1)
           else if (openMenuRef.current === 'audio') focusMenu('audio', 1)
+          else if (osdVisibleRef.current) focusOsdControl('down')
           break
         case '[':
           event.preventDefault()
@@ -402,8 +437,11 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       if (!video || !currentPad) return
 
       if (justPressed(currentPad, 0)) {
-        if (openMenuRef.current !== 'none') activateFocusedMenuItem()
-        else togglePlay()
+        if (openMenuRef.current !== 'none' || osdVisibleRef.current) {
+          if (!activateFocusedControl()) togglePlay()
+        } else {
+          togglePlay()
+        }
       }
       if (justPressed(currentPad, 1)) {
         if (openMenuRef.current !== 'none') {
@@ -420,17 +458,27 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       if (justPressed(currentPad, 12)) {
         if (openMenuRef.current === 'subtitles') focusMenu('subtitles', -1)
         else if (openMenuRef.current === 'audio') focusMenu('audio', -1)
+        else if (osdVisibleRef.current) focusOsdControl('up')
         else {
           showOsd(true)
-          osdRef.current?.querySelector<HTMLElement>('button, input')?.focus()
+          getOsdControls()[0]?.focus()
         }
       }
       if (justPressed(currentPad, 13)) {
         if (openMenuRef.current === 'subtitles') focusMenu('subtitles', 1)
         else if (openMenuRef.current === 'audio') focusMenu('audio', 1)
+        else if (osdVisibleRef.current) focusOsdControl('down')
       }
-      if (justPressed(currentPad, 14)) seekBy(-10)
-      if (justPressed(currentPad, 15)) seekBy(10)
+      if (justPressed(currentPad, 14)) {
+        if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, -1)
+        else if (osdVisibleRef.current) focusOsdControl('left')
+        else seekBy(-10)
+      }
+      if (justPressed(currentPad, 15)) {
+        if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, 1)
+        else if (osdVisibleRef.current) focusOsdControl('right')
+        else seekBy(10)
+      }
       if (justPressed(currentPad, 4)) seekBy(-30)
       if (justPressed(currentPad, 5)) seekBy(30)
     }
@@ -691,7 +739,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       </div>
 
       <p className={`hint player-hint ${osdVisible ? 'is-visible' : ''}`}>
-        A select/play · B back · X subtitles · Y fullscreen · D-pad ±10s or menu · LB/RB ±30s
+        A select/play · B back · X subtitles · Y fullscreen · D-pad moves OSD when visible · LB/RB ±30s
       </p>
     </div>
   )
