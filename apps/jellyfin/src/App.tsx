@@ -3,6 +3,7 @@ import { focusFirstFocusable, useControllerNavigation } from './hooks/useControl
 import {
   authenticate,
   clearSession,
+  getCollectionItems,
   getLatestItems,
   getLibraryItems,
   getResumeItems,
@@ -10,6 +11,7 @@ import {
   isPlayableItem,
   itemImageUrl,
   loadSession,
+  splitLibraryViews,
   type JellyfinItem,
   type JellyfinSession,
 } from './lib/jellyfin'
@@ -212,9 +214,11 @@ function HomeScreen({
   onOpenItem: (item: JellyfinItem) => void
   onSignOut: () => void
 }) {
-  const [views, setViews] = useState<JellyfinItem[]>([])
+  const [mediaLibraries, setMediaLibraries] = useState<JellyfinItem[]>([])
+  const [collections, setCollections] = useState<JellyfinItem[]>([])
   const [resume, setResume] = useState<JellyfinItem[]>([])
-  const [latest, setLatest] = useState<JellyfinItem[]>([])
+  const [latestMovies, setLatestMovies] = useState<JellyfinItem[]>([])
+  const [latestShows, setLatestShows] = useState<JellyfinItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -224,15 +228,23 @@ function HomeScreen({
       setLoading(true)
       setError(null)
       try {
-        const [nextViews, nextResume, nextLatest] = await Promise.all([
+        const [nextViews, nextResume, nextMovies, nextShows] = await Promise.all([
           getViews(session),
           getResumeItems(session),
-          getLatestItems(session),
+          getLatestItems(session, { includeItemTypes: 'Movie', limit: 24 }),
+          getLatestItems(session, { includeItemTypes: 'Series', limit: 24 }),
         ])
         if (cancelled) return
-        setViews(nextViews)
+
+        const { mediaLibraries: libraries, collectionsLibrary } = splitLibraryViews(nextViews)
+        const nextCollections = await getCollectionItems(session, collectionsLibrary?.Id)
+
+        if (cancelled) return
+        setMediaLibraries(libraries)
+        setCollections(nextCollections)
         setResume(nextResume)
-        setLatest(nextLatest)
+        setLatestMovies(nextMovies)
+        setLatestShows(nextShows)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load home')
@@ -265,14 +277,12 @@ function HomeScreen({
 
       <section className="section">
         <div className="section-heading">
-          <h2>Libraries</h2>
-          <p>Pick a library with the D-pad, then press A.</p>
+          <h2>My Media</h2>
         </div>
-        <div className="rail">
-          {views.map((item, index) => (
-            <PosterCard
+        <div className="media-rail">
+          {mediaLibraries.map((item, index) => (
+            <MediaLibraryCard
               key={item.Id}
-              session={session}
               item={item}
               autoFocus={index === 0}
               onSelect={() => onOpenLibrary(item)}
@@ -281,11 +291,29 @@ function HomeScreen({
         </div>
       </section>
 
+      {collections.length > 0 ? (
+        <section className="section">
+          <div className="section-heading">
+            <h2>Collections</h2>
+          </div>
+          <div className="rail poster-rail">
+            {collections.map((item) => (
+              <PosterCard
+                key={item.Id}
+                session={session}
+                item={item}
+                hideMeta
+                onSelect={() => onOpenLibrary(item)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {resume.length > 0 ? (
         <section className="section">
           <div className="section-heading">
             <h2>Continue Watching</h2>
-            <p>Resumes playback in-app.</p>
           </div>
           <div className="rail resume-rail">
             {resume.map((item) => (
@@ -302,18 +330,37 @@ function HomeScreen({
         </section>
       ) : null}
 
-      {latest.length > 0 ? (
+      {latestShows.length > 0 ? (
         <section className="section">
           <div className="section-heading">
-            <h2>Recently Added</h2>
+            <h2>Recently Added TV</h2>
           </div>
-          <div className="rail">
-            {latest.map((item) => (
+          <div className="rail poster-rail">
+            {latestShows.map((item) => (
               <PosterCard
                 key={item.Id}
                 session={session}
                 item={item}
-                subtitle={item.ProductionYear ? String(item.ProductionYear) : item.Type}
+                hideMeta
+                onSelect={() => onOpenItem(item)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {latestMovies.length > 0 ? (
+        <section className="section">
+          <div className="section-heading">
+            <h2>Recently Added Movies</h2>
+          </div>
+          <div className="rail poster-rail">
+            {latestMovies.map((item) => (
+              <PosterCard
+                key={item.Id}
+                session={session}
+                item={item}
+                hideMeta
                 onSelect={() => onOpenItem(item)}
               />
             ))}
@@ -420,6 +467,7 @@ function PosterCard({
   progress,
   onSelect,
   autoFocus,
+  hideMeta = false,
 }: {
   session: JellyfinSession
   item: JellyfinItem
@@ -427,15 +475,17 @@ function PosterCard({
   progress?: number
   onSelect: () => void
   autoFocus?: boolean
+  hideMeta?: boolean
 }) {
   const image = itemImageUrl(session, item, { maxWidth: 480 })
 
   return (
     <button
       type="button"
-      className="poster-card"
+      className={`poster-card ${hideMeta ? 'poster-card-art-only' : ''}`}
       onClick={onSelect}
       autoFocus={autoFocus}
+      aria-label={item.Name}
     >
       <div className="poster-art" style={image ? { backgroundImage: `url(${image})` } : undefined}>
         {!image ? <span>{item.Name.slice(0, 1)}</span> : null}
@@ -445,11 +495,87 @@ function PosterCard({
           </div>
         ) : null}
       </div>
-      <div className="poster-meta">
-        <strong>{item.Name}</strong>
-        {subtitle ? <span>{subtitle}</span> : null}
-      </div>
+      {!hideMeta ? (
+        <div className="poster-meta">
+          <strong>{item.Name}</strong>
+          {subtitle ? <span>{subtitle}</span> : null}
+        </div>
+      ) : null}
     </button>
+  )
+}
+
+function MediaLibraryCard({
+  item,
+  onSelect,
+  autoFocus,
+}: {
+  item: JellyfinItem
+  onSelect: () => void
+  autoFocus?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className="media-card"
+      onClick={onSelect}
+      autoFocus={autoFocus}
+      aria-label={item.Name}
+    >
+      <span className="media-card-icon" aria-hidden="true">
+        {libraryIcon(item)}
+      </span>
+      <span className="media-card-label">{item.Name}</span>
+    </button>
+  )
+}
+
+function libraryIcon(item: JellyfinItem) {
+  const type = (item.CollectionType ?? item.Type ?? '').toLowerCase()
+  if (type === 'movies' || type === 'homevideos') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M18 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM8 6h2v2H8V6zm0 4h2v2H8v-2zm0 4h2v2H8v-2zm0 4h2v2H8v-2zm10 2h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6V6h6v2z"
+        />
+      </svg>
+    )
+  }
+  if (type === 'tvshows') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"
+        />
+      </svg>
+    )
+  }
+  if (type === 'livetv' || type === 'tv') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path fill="currentColor" d="M8 5v14l11-7z" />
+      </svg>
+    )
+  }
+  if (type === 'music' || type === 'musicvideos') {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
+        />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24">
+      <path
+        fill="currentColor"
+        d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+      />
+    </svg>
   )
 }
 

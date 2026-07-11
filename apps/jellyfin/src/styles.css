@@ -216,8 +216,72 @@ h2 {
   scroll-snap-type: x mandatory;
 }
 
+.poster-rail {
+  grid-auto-columns: minmax(140px, 168px);
+}
+
 .resume-rail {
-  grid-auto-columns: minmax(220px, 260px);
+  grid-auto-columns: minmax(240px, 280px);
+}
+
+.media-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(180px, 220px);
+  gap: 0.85rem;
+  overflow-x: auto;
+  padding: 0.35rem 0.15rem 0.85rem;
+  scroll-snap-type: x mandatory;
+}
+
+.media-card {
+  scroll-snap-align: start;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 4.25rem;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  color: #f3f4f6;
+  background: rgba(31, 41, 55, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.media-card:hover {
+  transform: translateY(-1px);
+  background: rgba(55, 65, 81, 0.8);
+}
+
+.media-card:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.media-card-icon {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: grid;
+  place-items: center;
+  color: #e5e7eb;
+  flex: 0 0 auto;
+}
+
+.media-card-icon svg {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+.media-card-label {
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .poster-grid {
@@ -232,23 +296,32 @@ h2 {
   gap: 0.65rem;
   text-align: left;
   color: inherit;
-  background: linear-gradient(180deg, #1f2937, #111827);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 0.55rem;
-  box-shadow: var(--shadow);
+  padding: 0.2rem;
+  box-shadow: none;
+}
+
+.poster-card-art-only {
+  gap: 0;
+  padding: 0.15rem;
 }
 
 .poster-card:focus-visible {
-  border-color: var(--accent-strong);
-  box-shadow:
-    0 0 0 2px rgba(119, 91, 244, 0.35),
-    var(--shadow);
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-color: transparent;
+}
+
+.poster-card:focus-visible .poster-art,
+.poster-card:hover .poster-art {
+  box-shadow: 0 0 0 2px rgba(119, 91, 244, 0.45);
 }
 
 .poster-art {
   aspect-ratio: 2 / 3;
-  border-radius: calc(var(--radius) - 0.2rem);
+  border-radius: calc(var(--radius) - 0.15rem);
   background:
     linear-gradient(180deg, rgba(55, 65, 81, 0.35), rgba(17, 24, 39, 0.95)),
     #374151;
@@ -261,10 +334,20 @@ h2 {
   font-size: 2rem;
   font-weight: 700;
   color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .resume-rail .poster-art {
   aspect-ratio: 16 / 9;
+}
+
+.resume-rail .progress-track {
+  height: 0.28rem;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.resume-rail .progress-fill {
+  background: #fff;
 }
 
 .poster-meta {
