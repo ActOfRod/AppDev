@@ -1,0 +1,10 @@
+{
+  "name": "jellyfin-client",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Controller-friendly Jellyfin client for Steam Big Picture",
+  "scripts": {
+    "dev": "echo \"Jellyfin app not implemented yet — awaiting product direction\"",
+    "build": "echo \"Jellyfin app not implemented yet — awaiting product direction\""
+  }
+}
