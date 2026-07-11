@@ -7,18 +7,22 @@ import {
   getLibraryItems,
   getResumeItems,
   getViews,
+  isPlayableItem,
   itemImageUrl,
   loadSession,
-  openInWebClient,
   type JellyfinItem,
   type JellyfinSession,
 } from './lib/jellyfin'
+import { DetailScreen } from './screens/DetailScreen'
+import { PlayerScreen } from './screens/PlayerScreen'
 import './styles.css'
 
 type ViewState =
   | { screen: 'login' }
   | { screen: 'home' }
   | { screen: 'library'; library: JellyfinItem }
+  | { screen: 'detail'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
+  | { screen: 'player'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
 
 function App() {
   const [session, setSession] = useState<JellyfinSession | null>(() => loadSession())
@@ -26,22 +30,37 @@ function App() {
     loadSession() ? { screen: 'home' } : { screen: 'login' },
   )
 
-  useControllerNavigation(view.screen !== 'login')
+  useControllerNavigation(view.screen !== 'login' && view.screen !== 'player')
 
   useEffect(() => {
     const onBack = () => {
-      if (view.screen === 'library') {
+      if (view.screen === 'player') {
+        setView(view.returnTo)
+      } else if (view.screen === 'detail') {
+        setView(view.returnTo)
+      } else if (view.screen === 'library') {
         setView({ screen: 'home' })
       }
     }
     window.addEventListener('jellyfin:back', onBack)
     return () => window.removeEventListener('jellyfin:back', onBack)
-  }, [view.screen])
+  }, [view])
 
   const signOut = () => {
     clearSession()
     setSession(null)
     setView({ screen: 'login' })
+  }
+
+  const openItem = (
+    item: JellyfinItem,
+    returnTo: Exclude<ViewState, { screen: 'login' | 'player' }>,
+  ) => {
+    if (isPlayableItem(item)) {
+      setView({ screen: 'player', item, returnTo })
+      return
+    }
+    setView({ screen: 'detail', item, returnTo })
   }
 
   if (!session || view.screen === 'login') {
@@ -55,6 +74,29 @@ function App() {
     )
   }
 
+  if (view.screen === 'player') {
+    return (
+      <PlayerScreen
+        session={session}
+        item={view.item}
+        onBack={() => setView(view.returnTo)}
+      />
+    )
+  }
+
+  if (view.screen === 'detail') {
+    return (
+      <DetailScreen
+        session={session}
+        item={view.item}
+        onBack={() => setView(view.returnTo)}
+        onSignOut={signOut}
+        onOpenItem={(item) => openItem(item, view)}
+        onPlay={(item) => setView({ screen: 'player', item, returnTo: view })}
+      />
+    )
+  }
+
   if (view.screen === 'library') {
     return (
       <LibraryScreen
@@ -62,6 +104,7 @@ function App() {
         library={view.library}
         onBack={() => setView({ screen: 'home' })}
         onSignOut={signOut}
+        onOpenItem={(item) => openItem(item, view)}
       />
     )
   }
@@ -70,6 +113,7 @@ function App() {
     <HomeScreen
       session={session}
       onOpenLibrary={(library) => setView({ screen: 'library', library })}
+      onOpenItem={(item) => openItem(item, { screen: 'home' })}
       onSignOut={signOut}
     />
   )
@@ -152,10 +196,12 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => v
 function HomeScreen({
   session,
   onOpenLibrary,
+  onOpenItem,
   onSignOut,
 }: {
   session: JellyfinSession
   onOpenLibrary: (library: JellyfinItem) => void
+  onOpenItem: (item: JellyfinItem) => void
   onSignOut: () => void
 }) {
   const [views, setViews] = useState<JellyfinItem[]>([])
@@ -200,9 +246,6 @@ function HomeScreen({
           <h1>Welcome back, {session.userName}</h1>
         </div>
         <div className="topbar-actions">
-          <button type="button" className="ghost" onClick={() => openInWebClient(session)}>
-            Open web client
-          </button>
           <button type="button" className="ghost" onClick={onSignOut}>
             Sign out
           </button>
@@ -234,7 +277,7 @@ function HomeScreen({
         <section className="section">
           <div className="section-heading">
             <h2>Continue Watching</h2>
-            <p>Opens the item in your Jellyfin web client for playback.</p>
+            <p>Resumes playback in-app.</p>
           </div>
           <div className="rail resume-rail">
             {resume.map((item) => (
@@ -244,7 +287,7 @@ function HomeScreen({
                 item={item}
                 subtitle={resumeSubtitle(item)}
                 progress={item.UserData?.PlayedPercentage}
-                onSelect={() => openInWebClient(session, item.Id)}
+                onSelect={() => onOpenItem(item)}
               />
             ))}
           </div>
@@ -263,7 +306,7 @@ function HomeScreen({
                 session={session}
                 item={item}
                 subtitle={item.ProductionYear ? String(item.ProductionYear) : item.Type}
-                onSelect={() => openInWebClient(session, item.Id)}
+                onSelect={() => onOpenItem(item)}
               />
             ))}
           </div>
@@ -280,11 +323,13 @@ function LibraryScreen({
   library,
   onBack,
   onSignOut,
+  onOpenItem,
 }: {
   session: JellyfinSession
   library: JellyfinItem
   onBack: () => void
   onSignOut: () => void
+  onOpenItem: (item: JellyfinItem) => void
 }) {
   const [items, setItems] = useState<JellyfinItem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -351,7 +396,7 @@ function LibraryScreen({
               session={session}
               item={item}
               subtitle={item.ProductionYear ? String(item.ProductionYear) : undefined}
-              onSelect={() => openInWebClient(session, item.Id)}
+              onSelect={() => onOpenItem(item)}
             />
           ))}
         </div>
