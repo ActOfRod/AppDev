@@ -291,6 +291,12 @@ export function isCollectionsView(item: JellyfinItem): boolean {
   return collectionType === 'boxsets' || item.Name.toLowerCase() === 'collections'
 }
 
+export function isLiveTvView(item: JellyfinItem): boolean {
+  const collectionType = (item.CollectionType ?? '').toLowerCase()
+  const name = item.Name.toLowerCase()
+  return collectionType === 'livetv' || name === 'live tv' || name === 'livetv'
+}
+
 export function splitLibraryViews(views: JellyfinItem[]): {
   mediaLibraries: JellyfinItem[]
   collectionsLibrary: JellyfinItem | null
@@ -300,9 +306,12 @@ export function splitLibraryViews(views: JellyfinItem[]): {
   for (const view of views) {
     if (isCollectionsView(view)) {
       collectionsLibrary = view
-    } else {
-      mediaLibraries.push(view)
+      continue
     }
+    if (isLiveTvView(view)) {
+      continue
+    }
+    mediaLibraries.push(view)
   }
   return { mediaLibraries, collectionsLibrary }
 }

@@ -552,13 +552,6 @@ function libraryIcon(item: JellyfinItem) {
       </svg>
     )
   }
-  if (type === 'livetv' || type === 'tv') {
-    return (
-      <svg viewBox="0 0 24 24">
-        <path fill="currentColor" d="M8 5v14l11-7z" />
-      </svg>
-    )
-  }
   if (type === 'music' || type === 'musicvideos') {
     return (
       <svg viewBox="0 0 24 24">
