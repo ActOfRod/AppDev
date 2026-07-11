@@ -764,7 +764,7 @@ function IconPause() {
 function IconRewind() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M11.5 12 18 6v12l-6.5-6zm-7.5 0L10.5 6v12L4 12z" />
+      <path fill="currentColor" d="M11 18V6l-8.5 6L11 18zm.5-6 8.5 6V6l-8.5 6z" />
     </svg>
   )
 }
@@ -772,7 +772,7 @@ function IconRewind() {
 function IconForward() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M12.5 12 6 6v12l-6.5-6zm7.5 0L13.5 6v12L20 12z" />
+      <path fill="currentColor" d="M13 6v12l8.5-6L13 6zM4 18l8.5-6L4 6v12z" />
     </svg>
   )
 }
@@ -825,7 +825,7 @@ function IconFullscreen() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="currentColor"
-        d="M7 14H5v5h5v-2H7v-3zm0-4h2V7h3V5H5v5h2zm10 7h-3v2h5v-5h-2v3zm-3-12v2h3v3h2V5h-5z"
+        d="M7 14H5v5h5v-2H7v-3zm12 3h-2v2h-3v2h5v-5zM7 7h2V5h3V3H5v5h2zm12-2h-5v2h3v3h2V5z"
       />
     </svg>
   )
@@ -836,7 +836,7 @@ function IconExitFullscreen() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="currentColor"
-        d="M7 14H5v5h5v-2H7v-3zm5-9h-2v3H7v2h5V5zm2 14h2v-3h3v-2h-5v5zm0-9h5V7h-3V5h-2v5z"
+        d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
       />
     </svg>
   )
