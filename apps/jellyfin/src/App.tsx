@@ -155,8 +155,8 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => v
     <div className="login-shell">
       <div className="login-glow" aria-hidden />
       <form className="login-card" onSubmit={submit}>
-        <p className="brand">Jellyfin</p>
-        <h1>Living Room</h1>
+        <p className="brand">ValveFin</p>
+        <h1>Sign in</h1>
         <p className="lede">Sign in with keyboard and mouse. After that, use your controller.</p>
 
         <label>
@@ -250,7 +250,7 @@ function HomeScreen({
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <p className="brand">Jellyfin</p>
+          <p className="brand">ValveFin</p>
           <h1>Welcome back, {session.userName}</h1>
         </div>
         <div className="topbar-actions">
@@ -381,7 +381,7 @@ function LibraryScreen({
               <button type="button" className="ghost" onClick={onBack} autoFocus>
                 ← Back
               </button>
-              <p className="brand">Jellyfin</p>
+              <p className="brand">ValveFin</p>
               <h1>{library.Name}</h1>
             </div>
             <div className="topbar-actions">

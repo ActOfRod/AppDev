@@ -95,7 +95,7 @@ type AuthResponse = {
   }
 }
 
-const CLIENT_NAME = 'Jellyfin Living Room'
+const CLIENT_NAME = 'ValveFin'
 const CLIENT_VERSION = '0.1.0'
 const STORAGE_KEY = 'jellyfin.livingroom.session'
 
@@ -396,7 +396,7 @@ export async function getEpisodes(
 /** Chromium / Electron-friendly profile so Jellyfin can direct-play or transcode to mp4/hls. */
 function chromiumDeviceProfile() {
   return {
-    Name: 'Jellyfin Living Room Chromium',
+    Name: 'ValveFin Chromium',
     MaxStreamingBitrate: 120_000_000,
     MaxStaticBitrate: 120_000_000,
     DirectPlayProfiles: [

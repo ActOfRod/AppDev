@@ -8,7 +8,7 @@ Each app lives in its own folder under `apps/`. Apps are meant to be launched fr
 
 ```
 apps/
-  jellyfin/     # Windows Electron Jellyfin client (ElegantFin-inspired)
+  jellyfin/     # ValveFin — Windows Electron Jellyfin client (ElegantFin-inspired)
 ```
 
 ## Goals
@@ -21,7 +21,7 @@ apps/
 
 | App | Path | Status |
 |-----|------|--------|
-| Jellyfin Living Room | [`apps/jellyfin`](apps/jellyfin) | Electron MVP — sign-in, browse, controller nav |
+| ValveFin | [`apps/jellyfin`](apps/jellyfin) | Electron MVP — packages as `ValveFin.exe` |
 
 ## Adding a new app
 
