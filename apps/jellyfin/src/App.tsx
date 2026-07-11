@@ -302,7 +302,7 @@ function HomeScreen({
                 key={item.Id}
                 session={session}
                 item={item}
-                hideMeta
+                subtitle="Collection"
                 onSelect={() => onOpenLibrary(item)}
               />
             ))}
