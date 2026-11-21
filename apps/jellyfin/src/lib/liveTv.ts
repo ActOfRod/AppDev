@@ -1,6 +1,6 @@
 import { chromiumDeviceProfile, jellyfinFetch, type JellyfinItem, type JellyfinSession, type MediaSource } from './jellyfin.ts'
 
-export type LiveItem = JellyfinItem & { ChannelId?: string; ChannelNumber?: string; ChannelName?: string; StartDate?: string; EndDate?: string; IsSeries?: boolean; IsMovie?: boolean; IsSports?: boolean; IsKids?: boolean; IsNews?: boolean; IsRepeat?: boolean; IsPremiere?: boolean; TimerId?: string; SeriesTimerId?: string; ProgramId?: string; Status?: string; CurrentProgram?: LiveItem }
+export type LiveItem = JellyfinItem & { ChannelId?: string; ChannelNumber?: string; ChannelName?: string; ParentBackdropItemId?: string; ParentBackdropImageTags?: string[]; StartDate?: string; EndDate?: string; IsSeries?: boolean; IsMovie?: boolean; IsSports?: boolean; IsKids?: boolean; IsNews?: boolean; IsRepeat?: boolean; IsPremiere?: boolean; TimerId?: string; SeriesTimerId?: string; ProgramId?: string; Status?: string; CurrentProgram?: LiveItem }
 export const liveCall = <T>(session: JellyfinSession, path: string, method = 'GET', body?: unknown) => jellyfinFetch<T>(session.serverUrl, path, { deviceId: session.deviceId, token: session.accessToken, method, body })
 export async function liveItems(session: JellyfinSession, path: string, params: Record<string, string> = {}): Promise<LiveItem[]> {
   const items: LiveItem[] = []
