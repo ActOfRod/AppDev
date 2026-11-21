@@ -10,6 +10,7 @@ export function LivePlayerScreen({ session, channel, all, change, back }: { sess
   const visible = useRef(true)
   const [osd, setOsd] = useState(true)
   const [paused, setPaused] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [programs, setPrograms] = useState<LiveItem[]>([])
@@ -18,23 +19,29 @@ export function LivePlayerScreen({ session, channel, all, change, back }: { sess
   const hide = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const wake = () => { visible.current = true; setOsd(true); clearTimeout(hide.current); if (!video.current?.paused) hide.current = setTimeout(() => { visible.current = false; setOsd(false) }, 3500) }
   useEffect(() => {
+    void window.jellyfinDesktop?.setPlaybackActive(playing && !error).catch(() => undefined)
+    return () => { void window.jellyfinDesktop?.setPlaybackActive(false).catch(() => undefined) }
+  }, [playing, error])
+  useEffect(() => {
     let active = true; let playback: LivePlayback | undefined; let hls: Hls | undefined; let started = false; let closed = false
     const element = video.current!
     setError('')
+    setPlaying(false)
     const stop = () => { if (playback && !closed) { closed = true; const p = playback; void reportLive(session, p, 'stop', element.currentTime).catch(() => undefined); void closeLive(session, p).catch(() => undefined) } }
-    const fail = () => { if (active) setError('Live playback failed. Retry or choose another channel.'); stop() }
-    const playing = () => { setPaused(false); wake(); if (playback && !started) { started = true; void reportLive(session, playback, 'start', element.currentTime).catch(() => undefined) } }
-    const pause = () => { setPaused(true); wake(); if (playback && started && !closed) void reportLive(session, playback, 'progress', element.currentTime, true).catch(() => undefined) }
+    const fail = () => { if (active) { setPlaying(false); setError('Live playback failed. Retry or choose another channel.') } stop() }
+    const playing = () => { setPlaying(true); setPaused(false); wake(); if (playback && !started) { started = true; void reportLive(session, playback, 'start', element.currentTime).catch(() => undefined) } }
+    const pause = () => { setPlaying(false); setPaused(true); wake(); if (playback && started && !closed) void reportLive(session, playback, 'progress', element.currentTime, true).catch(() => undefined) }
+    const waiting = () => setPlaying(false)
     element.addEventListener('playing', playing); element.addEventListener('pause', pause); element.addEventListener('error', fail)
-    void window.jellyfinDesktop?.setPlaybackActive(true)
+    element.addEventListener('waiting', waiting); element.addEventListener('ended', waiting)
     openLive(session, channel).then(async (p) => {
       if (!active) { await closeLive(session, p).catch(() => undefined); return }
       playback = p
-      if (Hls.isSupported()) { hls = new Hls(); hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) fail() }); hls.loadSource(p.url); hls.attachMedia(element); hls.on(Hls.Events.MANIFEST_PARSED, () => { if (active) void element.play().catch(() => { setPaused(true); wake() }) }) }
-      else { element.src = p.url; void element.play().catch(() => { setPaused(true); wake() }) }
+      if (Hls.isSupported()) { hls = new Hls(); hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) fail() }); hls.loadSource(p.url); hls.attachMedia(element); hls.on(Hls.Events.MANIFEST_PARSED, () => { if (active) void element.play().catch(pause) }) }
+      else { element.src = p.url; void element.play().catch(pause) }
     }).catch((e) => { if (active) { setError(String(e)); stop() } })
     const t = setInterval(() => { if (playback && started && !closed) void reportLive(session, playback, 'progress', element.currentTime, element.paused).catch(() => undefined) }, 10000)
-    return () => { active = false; clearInterval(t); clearTimeout(hide.current); element.removeEventListener('playing', playing); element.removeEventListener('pause', pause); element.removeEventListener('error', fail); stop(); hls?.destroy(); element.removeAttribute('src'); element.load(); void window.jellyfinDesktop?.setPlaybackActive(false) }
+    return () => { active = false; clearInterval(t); clearTimeout(hide.current); element.removeEventListener('playing', playing); element.removeEventListener('pause', pause); element.removeEventListener('error', fail); element.removeEventListener('waiting', waiting); element.removeEventListener('ended', waiting); stop(); hls?.destroy(); element.removeAttribute('src'); element.load(); void window.jellyfinDesktop?.setPlaybackActive(false).catch(() => undefined) }
   }, [session, channel.Id, retry])
   useEffect(() => {
     let active = true
