@@ -2,6 +2,7 @@
 
 interface JellyfinDesktopApi {
   platform: NodeJS.Platform
+  focusWindow: () => Promise<void>
   toggleFullscreen: () => Promise<boolean>
   isFullscreen: () => Promise<boolean>
   setPlaybackActive: (active: boolean) => Promise<boolean>

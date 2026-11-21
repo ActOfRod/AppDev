@@ -57,6 +57,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false,
     },
   })
 
@@ -85,6 +86,12 @@ ipcMain.handle('window:toggle-fullscreen', () => {
 
 ipcMain.handle('window:is-fullscreen', () => {
   return mainWindow?.isFullScreen() ?? false
+})
+
+ipcMain.handle('window:focus', (event) => {
+  if (event.sender !== mainWindow?.webContents) return
+  mainWindow.focus()
+  mainWindow.webContents.focus()
 })
 
 ipcMain.handle('playback:active', (event, active: boolean) => {

@@ -28,6 +28,14 @@ export default function App() {
   const [queue, setQueue] = useState<JellyfinItem[]>([])
   const [prefs, setPrefs] = useState(loadPreferences)
   const focusBeforeContext = useRef<HTMLElement | null>(null)
+  const previousScreen = useRef(view.screen)
+  useEffect(() => {
+    const previous = previousScreen.current
+    previousScreen.current = view.screen
+    if (previous !== view.screen && (previous === 'player' || previous === 'detail')) {
+      void window.jellyfinDesktop?.focusWindow?.().catch(() => undefined)
+    }
+  }, [view.screen])
   useControllerNavigation(view.screen !== 'player')
   const success = useCallback((s: JellyfinSession) => { rememberProfile(s); setSession(s); setMessage(''); setView({ screen: 'home' }) }, [])
   const signOut = () => { clearSession(); setSession(null); setQueue([]); setView({ screen: 'login' }) }

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('jellyfinDesktop', {
   platform: process.platform,
+  focusWindow: () => ipcRenderer.invoke('window:focus') as Promise<void>,
   toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen') as Promise<boolean>,
   isFullscreen: () => ipcRenderer.invoke('window:is-fullscreen') as Promise<boolean>,
   setPlaybackActive: (active: boolean) => ipcRenderer.invoke('playback:active', active) as Promise<boolean>,
