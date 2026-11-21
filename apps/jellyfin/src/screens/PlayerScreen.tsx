@@ -438,6 +438,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       if (!video) return
       const hidden = !osdVisibleRef.current
       showOsd()
+      if (hidden && event.key === 'Enter') { event.preventDefault(); event.stopImmediatePropagation(); togglePlay(); getOsdControls()[0]?.focus(); return }
       if (hidden && ![' ', 'k', 'K', 'MediaPlayPause'].includes(event.key)) {
         event.preventDefault(); event.stopImmediatePropagation(); getOsdControls()[0]?.focus(); return
       }
@@ -543,7 +544,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       if (!stickActive) blockedSticks.delete(currentPad.index)
       if (hidden) {
         if (stickActive) blockedSticks.add(currentPad.index)
-        if (justPressed(currentPad, 9)) togglePlay()
+        if (justPressed(currentPad, 0) || justPressed(currentPad, 9)) togglePlay()
         getOsdControls()[0]?.focus()
         continue
       }

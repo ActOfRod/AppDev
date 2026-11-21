@@ -56,7 +56,7 @@ export function LivePlayerScreen({ session, channel, all, change, back }: { sess
     const act = (key: string) => {
       const hidden = !visible.current; wake()
       if (['PageUp', 'PageDown'].includes(key) || hidden && ['ArrowUp', 'ArrowDown'].includes(key)) { channelBy(key === 'PageUp' || key === 'ArrowUp' ? -1 : 1); return }
-      if (key === ' ' || key === 'MediaPlayPause') { toggle(); return }
+      if (key === ' ' || key === 'MediaPlayPause' || hidden && key === 'Enter') { toggle(); focusPlay(); return }
       if (hidden) { focusPlay(); return }
       if (key === 'Escape') back()
       else if (key === 'F11') { if (window.jellyfinDesktop?.toggleFullscreen) void window.jellyfinDesktop.toggleFullscreen(); else if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen() }
@@ -68,7 +68,7 @@ export function LivePlayerScreen({ session, channel, all, change, back }: { sess
     const click = (e: MouseEvent) => { if (!visible.current) { wake(); e.preventDefault(); e.stopImmediatePropagation() } }
     const reader = createPadReader(navigator.getGamepads?.() ?? []); let frame = 0; let stick = false
     const poll = () => { frame = requestAnimationFrame(poll); const inputs = reader(navigator.getGamepads?.() ?? []); const pressed = new Set(inputs.flatMap((i) => [...i.pressed])); const keys: Record<number, string> = { 0: 'Enter', 1: 'Escape', 3: 'F11', 4: 'PageUp', 5: 'PageDown', 9: ' ', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight' }; const hidden = !visible.current
-      for (const b of pressed) { if (hidden && ![4, 5, 9, 12, 13].includes(b)) { wake(); focusPlay() } else act(keys[b] ?? '') }
+      for (const b of pressed) { if (hidden && ![0, 4, 5, 9, 12, 13].includes(b)) { wake(); focusPlay() } else act(keys[b] ?? '') }
       const axis = inputs.find((i) => Math.max(Math.abs(i.pad.axes[0] ?? 0), Math.abs(i.pad.axes[1] ?? 0)) > 0.55)?.pad.axes
       if (axis && !stick) act(Math.abs(axis[0]) > Math.abs(axis[1]) ? axis[0] > 0 ? 'ArrowRight' : 'ArrowLeft' : axis[1] > 0 ? 'ArrowDown' : 'ArrowUp')
       stick = Boolean(axis)
