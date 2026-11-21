@@ -136,7 +136,7 @@ type AuthResponse = {
 }
 
 const CLIENT_NAME = 'ValveFin'
-const CLIENT_VERSION = '0.1.0'
+const CLIENT_VERSION = '0.2.0'
 const STORAGE_KEY = 'jellyfin.livingroom.session'
 
 function normalizeServerUrl(input: string): string {

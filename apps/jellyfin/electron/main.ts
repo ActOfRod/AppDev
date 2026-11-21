@@ -3,6 +3,15 @@ import path from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import dgram from 'node:dgram'
 
+if (process.platform === 'linux') {
+  if (process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox')
+  const features = new Set(app.commandLine.getSwitchValue('enable-features').split(',').filter(Boolean))
+  for (const feature of ['VaapiVideoDecoder', 'AcceleratedVideoDecodeLinuxGL', 'VaapiVideoDecodeLinuxGL']) features.add(feature)
+  app.commandLine.appendSwitch('enable-features', [...features].join(','))
+  app.commandLine.appendSwitch('enable-accelerated-video-decode')
+}
+const gameMode = process.platform === 'linux' && (process.env.SteamGamepadUI === '1' || /(^|:)gamescope(:|$)/i.test(process.env.XDG_CURRENT_DESKTOP ?? ''))
+
 process.env.DIST = path.join(__dirname, '../dist')
 process.env.VITE_PUBLIC = app.isPackaged
   ? process.env.DIST
@@ -23,14 +32,15 @@ function stopPlaybackBlocker() {
   playbackBlocker = null
 }
 
-const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const VITE_DEV_SERVER_URL = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1920,
     height: 1080,
     ...desktopState.bounds,
-    fullscreen: desktopState.fullscreen !== false,
+    fullscreen: gameMode || desktopState.fullscreen !== false,
+    icon: path.join(process.env.VITE_PUBLIC!, 'icon.png'),
     minWidth: 1280,
     minHeight: 720,
     backgroundColor: '#111827',

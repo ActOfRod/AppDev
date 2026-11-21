@@ -1,10 +1,10 @@
-name: Build ValveFin Windows
+name: Build ValveFin
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+    tags: ['valvefin-v*']
     paths:
       - 'apps/jellyfin/**'
       - '.github/workflows/build-jellyfin-windows.yml'
@@ -13,42 +13,77 @@ on:
       - 'apps/jellyfin/**'
       - '.github/workflows/build-jellyfin-windows.yml'
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: apps/jellyfin
 
 jobs:
-  build-windows:
-    name: Build ValveFin.exe
-    runs-on: windows-latest
+  build:
+    name: Build ValveFin (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            command: pack:win
+            artifacts: |
+              apps/jellyfin/release/ValveFin.exe
+              apps/jellyfin/release/ValveFin-Setup-*.exe
+          - platform: linux
+            os: ubuntu-latest
+            command: pack:linux
+            artifacts: |
+              apps/jellyfin/release/ValveFin-*-x86_64.AppImage
+              apps/jellyfin/release/ValveFin-*.tar.gz
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/jellyfin/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Windows packages
+      - run: npm ci
+      - name: Check release tag matches app version
+        if: startsWith(github.ref, 'refs/tags/valvefin-v')
         env:
-          # Unsigned local/Steam builds — skip code-signing discovery in CI
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e "const v=require('./package.json').version; if(process.env.RELEASE_TAG !== 'valvefin-v'+v) throw Error('Tag must match package version '+v)"
+      - name: Build packages
+        env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run pack:win
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        run: npm run ${{ matrix.command }}
+      - uses: actions/upload-artifact@v4
         with:
-          name: valvefin-windows
-          path: |
-            apps/jellyfin/release/ValveFin.exe
-            apps/jellyfin/release/ValveFin-Setup-*.exe
+          name: valvefin-${{ matrix.platform }}
+          path: ${{ matrix.artifacts }}
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish ValveFin release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/valvefin-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: valvefin-*
+          merge-multiple: true
+          path: release-artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-artifacts/ValveFin.exe
+            release-artifacts/ValveFin-Setup-*.exe
+            release-artifacts/ValveFin-*-x86_64.AppImage
+            release-artifacts/ValveFin-*.tar.gz
