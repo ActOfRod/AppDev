@@ -27,8 +27,8 @@ apps/
 
 Cinematic browsing, paginated libraries/collections, controller search, favorites/watched state, capability-aware playback, subtitles, skip segments, next-episode autoplay, trickplay, background music and saved profiles/Quick Connect. See the [full features and requirements](apps/jellyfin/README.md).
 
-- **Windows:** download `ValveFin.exe` or `ValveFin-Setup-0.2.1.exe` from [Releases](https://github.com/ActOfRod/AppDev/releases) when available. Add the executable as a non-Steam game. Builds are unsigned.
-- **SteamOS:** Desktop Mode → download `ValveFin-0.2.1-x86_64.AppImage` → Properties → executable (or `chmod +x`) → Add to Steam as a non-Steam game → launch in Game Mode. Use a Steam Input **Gamepad** template, not keyboard/mouse; do not force Proton. Without FUSE, add `--appimage-extract-and-run` to launch options. No writable system partition or setuid sandbox setup is needed.
+- **Windows:** download `ValveFin-Setup-0.2.2.exe` (recommended for Steam) or portable `ValveFin.exe` from [Releases](https://github.com/ActOfRod/AppDev/releases) when available. Add the installed executable as a non-Steam game; the portable launcher extracts and runs a temporary child process that Steam may not hook. Builds are unsigned.
+- **SteamOS:** Desktop Mode → download `ValveFin-0.2.2-x86_64.AppImage` → Properties → executable (or `chmod +x`) → Add to Steam as a non-Steam game → launch in Game Mode. Use a Steam Input **Gamepad** template, not keyboard/mouse; do not force Proton. Without FUSE, add `--appimage-extract-and-run` to launch options. No writable system partition or setuid sandbox setup is needed.
 - **Controller:** D-pad/stick move; A selects; B backs out; X card actions (subtitles in player); Y fullscreen; Start navigation (play/pause in player); Select player info; LB/RB seek ±30s. See the [complete map](apps/jellyfin/README.md#controller-map).
 - **Build:** Node 22+, `cd apps/jellyfin`, `npm ci`, then `npm run dev`, `npm run pack:win` or `npm run pack:linux`. Outputs are in `apps/jellyfin/release/`; build on the matching OS, or install Wine for Windows cross-builds.
 

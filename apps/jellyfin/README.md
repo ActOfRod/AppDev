@@ -34,16 +34,16 @@ The portable `ValveFin.exe` is an NSIS launcher: it extracts the app into a temp
 Download from [Releases](https://github.com/ActOfRod/AppDev/releases) when available:
 
 - **ValveFin.exe**: portable; keep it in a permanent, writable folder and run it.
-- **ValveFin-Setup-0.2.1.exe**: optional NSIS installer.
+- **ValveFin-Setup-0.2.2.exe**: optional NSIS installer.
 
 Unsigned builds can trigger SmartScreen. Verify the source/download before choosing **More info → Run anyway**. Add the portable or installed executable with **Steam → Games → Add a Non-Steam Game**, then launch from Big Picture. Preferences live in your user profile, not beside the executable.
 
 ## SteamOS / Steam Deck install
 
-1. Switch to **Desktop Mode** and download **ValveFin-0.2.1-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
+1. Switch to **Desktop Mode** and download **ValveFin-0.2.2-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
 2. Dolphin → Properties → Permissions → **Is executable**, or run:
    ```bash
-   chmod +x ~/Applications/ValveFin-0.2.1-x86_64.AppImage
+   chmod +x ~/Applications/ValveFin-0.2.2-x86_64.AppImage
    ```
 3. Run it once; sign in using the controller keyboard, a physical keyboard or Quick Connect.
 4. Steam → **Add a Non-Steam Game → Browse**, select the AppImage (show all files), and name it ValveFin. **Do not force Proton**: this is a native Linux app.
@@ -59,9 +59,9 @@ Without FUSE, set the Steam shortcut's launch options to:
 --appimage-extract-and-run
 ```
 
-Or run `./ValveFin-0.2.1-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
+Or run `./ValveFin-0.2.2-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
 
-The alternative **ValveFin-0.2.1-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
+The alternative **ValveFin-0.2.2-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
 
 Linux VA-API decode is enabled where Electron/Mesa/drivers support it; unsupported codecs fall back to software decoding or Jellyfin transcoding. Hardware decode and physical-controller behavior should be checked on the target device.
 
@@ -97,13 +97,20 @@ Build on the matching OS where possible. Windows cross-builds on Linux need Wine
 
 The [Build ValveFin workflow](../../.github/workflows/build-jellyfin-windows.yml) builds on `windows-latest` and `ubuntu-latest` for relevant PRs, main pushes and manual dispatch. Download `valvefin-windows` / `valvefin-linux` workflow artifacts for untagged builds.
 
-Maintainers can publish all four packages by pushing **`valvefin-v0.2.1`** after checking the matching package version. Tag builds validate the version and create a GitHub Release only after both platforms succeed. Builds are unsigned; there is no automatic updater.
+Maintainers can publish all four packages by pushing **`valvefin-v0.2.2`** after checking the matching package version. Tag builds validate the version and create a GitHub Release only after both platforms succeed. Builds are unsigned; there is no automatic updater.
 
 Integration scripts in `scripts/check-phase*.mjs` expect the local test Jellyfin at port 8096 and, for browser/Electron checks, the debugging endpoints specified in each script. Run API checks with `node --experimental-strip-types scripts/check-phase3.mjs`. They mutate/restore test-user state; do not point them at production.
 
 With the local `devin` test account and a desktop display running, `node scripts/check-phase4-appimage.mjs` launches the packaged AppImage twice using extraction mode, tests UI login and simulated controller navigation, and checks Game Mode fullscreen. It uses a separate profile/log directory at `~/.local/share/valvefin-phase4-smoke` and saves `~/shots/phase4/appimage.png`. It does not prove physical Steam Input or hardware decode support.
 
 Session tokens (not passwords) are stored in your local user profile. Forget saved profiles from the account picker on shared machines. LAN discovery requires UDP 7359; manual URL entry works across subnets or when broadcast is blocked.
+
+## 0.2.2
+
+- Home episode cards use show artwork and show name, with season/episode and title underneath.
+- Continue Watching opens full cinematic details rather than a standalone resume prompt. Details include media selectors carried into playback, cast, credits and external links.
+- Caption, audio and fullscreen controls use clear inline SVG artwork without icon-font dependencies.
+- Windows uses borderless display bounds rather than native fullscreen. Background screen transitions, fullscreen shortcuts and second launches never reclaim focus. Installed Steam builds remain recommended; native Steam overlay verification is still required.
 
 ## 0.2.1
 
