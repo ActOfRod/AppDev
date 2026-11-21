@@ -1,6 +1,6 @@
 export function createPadReader(initial: readonly (Gamepad | null)[] = []) {
   const states = new Map<number, boolean[]>()
-  for (const pad of initial) if (pad?.connected) states.set(pad.index, pad.buttons.map((b) => b.pressed))
+  for (const pad of initial) if (pad?.connected) states.set(pad.index, pad.buttons.map((b) => b.pressed || b.value > 0.5))
   return (pads: readonly (Gamepad | null)[]) => {
     const connected = pads.filter((pad): pad is Gamepad => Boolean(pad?.connected))
     for (const index of states.keys()) if (!connected.some((pad) => pad.index === index)) states.delete(index)

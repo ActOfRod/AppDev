@@ -409,14 +409,11 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
 
   useEffect(() => {
     const onBackEvent = () => {
+      if (!osdVisibleRef.current) { showOsd(); getOsdControls()[0]?.focus(); return }
       if (promptsRef.current.visible) { promptsRef.current.cancel(); return }
       if (openMenuRef.current !== 'none') {
         setOpenMenu('none')
         showOsd()
-        return
-      }
-      if (osdVisibleRef.current) {
-        setOsdVisible(false)
         return
       }
       onBack()
@@ -508,7 +505,6 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
           event.preventDefault()
           if (promptsRef.current.visible) promptsRef.current.cancel()
           else if (openMenuRef.current !== 'none') setOpenMenu('none')
-          else if (osdVisibleRef.current) setOsdVisible(false)
           else onBack()
           break
       }
@@ -522,7 +518,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
 
     let frame = 0
     const readPads = createPadReader(navigator.getGamepads?.() ?? [])
-    const blocked = new Set<number>()
+    const blockedSticks = new Set<number>()
     let stickAt = 0
 
     const poll = () => {
@@ -531,15 +527,20 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       if (!video) return
       for (const input of readPads(navigator.getGamepads?.() ?? [])) {
       const currentPad = input.pad
-      if (!input.active) { blocked.delete(currentPad.index); continue }
+      if (!input.active) { blockedSticks.delete(currentPad.index); continue }
       const hidden = !osdVisibleRef.current
       showOsd()
-      if (hidden && !input.pressed.has(9)) { blocked.add(currentPad.index); getOsdControls()[0]?.focus() }
-      if (blocked.has(currentPad.index)) continue
       const justPressed = (_pad: Gamepad, index: number) => input.pressed.has(index)
       const x = currentPad.axes[0] ?? 0
       const y = currentPad.axes[1] ?? 0
-      if (performance.now() >= stickAt && Math.max(Math.abs(x), Math.abs(y)) > 0.55) {
+      const stickActive = Math.max(Math.abs(x), Math.abs(y)) > 0.55
+      if (!stickActive) blockedSticks.delete(currentPad.index)
+      if (hidden && !input.pressed.has(9)) {
+        if (stickActive) blockedSticks.add(currentPad.index)
+        getOsdControls()[0]?.focus()
+        continue
+      }
+      if (!blockedSticks.has(currentPad.index) && performance.now() >= stickAt && stickActive) {
         const direction = Math.abs(x) > Math.abs(y) ? (x < 0 ? 'left' : 'right') : (y < 0 ? 'up' : 'down')
         if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, direction === 'left' || direction === 'up' ? -1 : 1)
         else if (osdVisibleRef.current) focusOsdControl(direction)
@@ -560,8 +561,6 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
         else if (openMenuRef.current !== 'none') {
           setOpenMenu('none')
           showOsd()
-        } else if (osdVisibleRef.current) {
-          setOsdVisible(false)
         } else {
           onBack()
         }
