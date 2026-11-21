@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Hls from 'hls.js'
+import { createPadReader } from '../lib/gamepad'
 import { PlayerMenus, menuSelector, type OpenMenu, type ExtraMenu } from '../components/PlayerMenus'
 import { loadSettings, saveSettings, type PlayerSettings } from '../lib/settings'
 import { usePlaybackPrompts } from '../hooks/usePlaybackPrompts'
@@ -115,6 +116,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
   }, [currentTime, duration])
 
   const showOsd = (persist = false) => {
+    osdVisibleRef.current = true
     setOsdVisible(true)
     if (hideTimer.current) window.clearTimeout(hideTimer.current)
     if (!persist && !videoRef.current?.paused && openMenuRef.current === 'none') {
@@ -436,15 +438,23 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     const onKeyDown = (event: KeyboardEvent) => {
       const video = videoRef.current
       if (!video) return
+      const hidden = !osdVisibleRef.current
+      showOsd()
+      if (hidden && ![' ', 'k', 'K', 'MediaPlayPause'].includes(event.key)) {
+        event.preventDefault(); event.stopImmediatePropagation(); getOsdControls()[0]?.focus(); return
+      }
 
       switch (event.key) {
         case ' ':
         case 'k':
         case 'K':
+        case 'MediaPlayPause':
           event.preventDefault()
-          if (openMenuRef.current !== 'none' || osdVisibleRef.current) {
-            if (!activateFocusedControl()) togglePlay()
-          } else togglePlay()
+          togglePlay()
+          break
+        case 'Enter':
+          event.preventDefault()
+          activateFocusedControl()
           break
         case 'ArrowLeft':
           event.preventDefault()
@@ -504,32 +514,29 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       }
     }
 
-    window.addEventListener('keydown', onKeyDown)
+    const mouseActivity = () => showOsd()
+    const revealClick = (event: MouseEvent) => { if (!osdVisibleRef.current) { showOsd(); event.preventDefault(); event.stopImmediatePropagation() } }
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('mousemove', mouseActivity)
+    window.addEventListener('click', revealClick, true)
 
     let frame = 0
-    const buttonState: Record<number, boolean> = {}
+    const readPads = createPadReader(navigator.getGamepads?.() ?? [])
+    const blocked = new Set<number>()
     let stickAt = 0
-    const pads = navigator.getGamepads?.() ?? []
-    const pad = pads.find((p) => p && p.connected)
-    if (pad) {
-      for (let i = 0; i < pad.buttons.length; i += 1) {
-        buttonState[i] = Boolean(pad.buttons[i]?.pressed)
-      }
-    }
-
-    const justPressed = (gamepad: Gamepad, index: number) => {
-      const isDown = Boolean(gamepad.buttons[index]?.pressed)
-      const wasDown = buttonState[index] ?? false
-      buttonState[index] = isDown
-      return isDown && !wasDown
-    }
 
     const poll = () => {
       frame = requestAnimationFrame(poll)
       const video = videoRef.current
-      const currentPads = navigator.getGamepads?.() ?? []
-      const currentPad = currentPads.find((p) => p && p.connected)
-      if (!video || !currentPad) return
+      if (!video) return
+      for (const input of readPads(navigator.getGamepads?.() ?? [])) {
+      const currentPad = input.pad
+      if (!input.active) { blocked.delete(currentPad.index); continue }
+      const hidden = !osdVisibleRef.current
+      showOsd()
+      if (hidden && !input.pressed.has(9)) { blocked.add(currentPad.index); getOsdControls()[0]?.focus() }
+      if (blocked.has(currentPad.index)) continue
+      const justPressed = (_pad: Gamepad, index: number) => input.pressed.has(index)
       const x = currentPad.axes[0] ?? 0
       const y = currentPad.axes[1] ?? 0
       if (performance.now() >= stickAt && Math.max(Math.abs(x), Math.abs(y)) > 0.55) {
@@ -587,11 +594,14 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       }
       if (justPressed(currentPad, 4)) seekBy(-30)
       if (justPressed(currentPad, 5)) seekBy(30)
+      }
     }
     frame = requestAnimationFrame(poll)
 
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('mousemove', mouseActivity)
+      window.removeEventListener('click', revealClick, true)
       cancelAnimationFrame(frame)
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur()

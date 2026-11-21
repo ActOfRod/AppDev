@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPadReader } from '../lib/gamepad'
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -128,32 +129,21 @@ async function toggleFullscreen() {
   }
 }
 
-function seedButtonState(target: Record<number, boolean>) {
-  const pads = navigator.getGamepads?.() ?? []
-  const pad = pads.find((p) => p && p.connected)
-  if (!pad) return
-  for (let i = 0; i < pad.buttons.length; i += 1) {
-    target[i] = Boolean(pad.buttons[i]?.pressed)
-  }
-}
-
 /**
  * Spatial navigation for couch / Steam Big Picture use.
  * Keyboard arrows work as a fallback; gamepad D-pad / left stick move focus.
  * A / South activates; B / East goes back; Y / North toggles fullscreen.
  */
 export function useControllerNavigation(enabled: boolean) {
-  const buttonState = useRef<Record<number, boolean>>({})
   const stickCooldown = useRef(0)
 
   useEffect(() => {
     if (!enabled) {
-      buttonState.current = {}
       return
     }
 
     // Avoid phantom presses from buttons still held after leaving the player.
-    seedButtonState(buttonState.current)
+    const readPads = createPadReader(navigator.getGamepads?.() ?? [])
     // Recover focus if the previous screen left a detached activeElement.
     if (!getActiveFocusable()) {
       // Wait a frame so the new screen's autoFocus/layout can settle.
@@ -209,18 +199,11 @@ export function useControllerNavigation(enabled: boolean) {
     let frame = 0
     const poll = () => {
       frame = requestAnimationFrame(poll)
-      const pads = navigator.getGamepads?.() ?? []
-      const pad = pads.find((p) => p && p.connected)
-      if (!pad) return
+      for (const input of readPads(navigator.getGamepads?.() ?? [])) {
+      const pad = input.pad
 
       const now = performance.now()
-      const pressed = (index: number) => Boolean(pad.buttons[index]?.pressed)
-      const justPressed = (index: number) => {
-        const isDown = pressed(index)
-        const wasDown = buttonState.current[index] ?? false
-        buttonState.current[index] = isDown
-        return isDown && !wasDown
-      }
+      const justPressed = (index: number) => input.pressed.has(index)
 
       // D-pad
       if (justPressed(12)) moveFocus('up')
@@ -254,6 +237,7 @@ export function useControllerNavigation(enabled: boolean) {
           }
           stickCooldown.current = now + 220
         }
+      }
       }
     }
 
