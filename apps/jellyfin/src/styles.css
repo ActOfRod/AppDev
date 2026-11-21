@@ -727,6 +727,29 @@ h2 {
   position: relative;
 }
 
+.player-options { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+.player-options button { padding: 0.45rem 0.8rem; }
+.player-menu {
+  position: absolute; right: 0; bottom: calc(100% + 0.7rem); width: min(30rem, 85vw);
+  max-height: 65vh; overflow: auto; display: grid; gap: 0.35rem; padding: 1.1rem;
+  background: rgba(17, 24, 39, 0.97); border: 1px solid var(--focus); border-radius: 0.9rem; box-shadow: var(--shadow);
+}
+.player-menu h3, .player-menu p { margin: 0 0 0.5rem; }
+.player-menu p { color: var(--text-dim); font-size: 0.85rem; }
+.player-menu button { border: 0; background: transparent; color: #e5e7eb; text-align: left; padding: 0.6rem 0.8rem; border-radius: 0.45rem; }
+.player-menu button.is-selected, .player-menu button:hover, .player-menu button:focus { background: rgba(117, 111, 226, 0.28); }
+.player-menu dl { display: grid; grid-template-columns: 1fr 1.5fr; gap: 0.65rem; }
+.player-menu dd { margin: 0; overflow-wrap: anywhere; }
+.player-menu dt { color: var(--text-dim); }
+.playback-prompts { position: absolute; right: 3vw; bottom: 16rem; display: grid; gap: 1rem; z-index: 8; }
+.up-next { max-width: 28rem; padding: 1.3rem; background: rgba(17,24,39,0.96); border: 1px solid var(--focus); border-radius: 0.9rem; box-shadow: var(--shadow); }
+.up-next h3 { margin: 0.5rem 0 1rem; }
+.up-next button { margin-right: 0.65rem; }
+.trickplay-preview { position: absolute; bottom: calc(100% + 0.65rem); transform: translateX(-50%); background: #111827; border: 2px solid var(--focus); border-radius: 0.4rem; overflow: hidden; text-align: center; pointer-events: none; }
+.trickplay-preview span { display: block; padding: 0.25rem; }
+.player-scrubber { position: relative; }
+.resume-prompt { padding-top: 25vh; max-width: 60rem; margin: auto; }
+
 .subtitle-menu {
   position: absolute;
   right: 0;

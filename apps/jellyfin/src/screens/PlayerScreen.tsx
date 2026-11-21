@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Hls from 'hls.js'
+import { PlayerMenus, menuSelector, type OpenMenu, type ExtraMenu } from '../components/PlayerMenus'
+import { loadSettings, saveSettings, type PlayerSettings } from '../lib/settings'
+import { usePlaybackPrompts } from '../hooks/usePlaybackPrompts'
 import {
   createPlaybackSession,
   formatClockTime,
@@ -9,6 +12,9 @@ import {
   reportPlaybackStart,
   reportPlaybackStopped,
   ticksToMs,
+  trickplayThumbnail,
+  getTrickplayImage,
+  type PlaybackOptions,
   type AudioTrack,
   type JellyfinItem,
   type JellyfinSession,
@@ -20,11 +26,11 @@ type PlayerScreenProps = {
   session: JellyfinSession
   item: JellyfinItem
   onBack: () => void
+  onNext: (item: JellyfinItem) => void
+  startPositionTicks?: number
 }
 
-type OpenMenu = 'none' | 'subtitles' | 'audio'
-
-export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
+export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks }: PlayerScreenProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const playbackRef = useRef<PlaybackSession | null>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -37,6 +43,14 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   const mounted = useRef(true)
   const reported = useRef<string | null>(null)
   const pendingMetadata = useRef<(() => void) | null>(null)
+  const reloadRevision = useRef(0)
+  const [settings, setSettings] = useState(loadSettings)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const [playbackInfo, setPlaybackInfo] = useState<PlaybackSession | null>(null)
+  const [seekPreview, setSeekPreview] = useState<number | null>(null)
+  const [thumbnailImage, setThumbnailImage] = useState<{ path: string; url: string } | null>(null)
+  const cueTimes = useRef(new WeakMap<VTTCue, { start: number; end: number }>())
 
   const [title] = useState(item.Name)
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +67,36 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   const [activeAudio, setActiveAudio] = useState<number | null>(null)
   const [openMenu, setOpenMenu] = useState<OpenMenu>('none')
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const prompts = usePlaybackPrompts(session, item, currentTime, duration, paused, settings,
+    (seconds) => { if (videoRef.current) videoRef.current.currentTime = Math.min(duration || seconds, seconds) }, onNext)
+  const promptsRef = useRef(prompts)
+  promptsRef.current = prompts
+  const updateSettings = (patch: Partial<PlayerSettings>) => {
+    setSettings((previous) => { const next = { ...previous, ...patch }; saveSettings(next); return next })
+  }
+  const applySubtitleStyle = () => {
+    const prefs = settingsRef.current
+    for (const track of Array.from(videoRef.current?.textTracks ?? [])) {
+      for (const cue of Array.from(track.cues ?? [])) {
+        if (!(cue instanceof VTTCue)) continue
+        if (!cueTimes.current.has(cue)) cueTimes.current.set(cue, { start: cue.startTime, end: cue.endTime })
+        const original = cueTimes.current.get(cue)!
+        cue.startTime = Math.max(0, original.start + prefs.subtitleDelay)
+        cue.endTime = Math.max(cue.startTime + 0.01, original.end + prefs.subtitleDelay)
+        cue.snapToLines = false
+        cue.line = prefs.subtitlePosition
+        cue.lineAlign = 'end'
+      }
+    }
+  }
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = settings.speed
+    applySubtitleStyle()
+  }, [settings])
+  useEffect(() => {
+    void window.jellyfinDesktop?.setPlaybackActive(!paused && !loading && !error).catch(() => undefined)
+    return () => { void window.jellyfinDesktop?.setPlaybackActive(false).catch(() => undefined) }
+  }, [paused, loading, error])
 
   openMenuRef.current = openMenu
   osdVisibleRef.current = osdVisible
@@ -77,7 +121,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   }
 
   const focusMenu = (menu: Exclude<OpenMenu, 'none'>, delta = 0) => {
-    const selector = menu === 'subtitles' ? '.subtitle-menu button' : '.audio-menu button'
+    const selector = menuSelector(menu)
     const buttons = Array.from(osdRef.current?.querySelectorAll<HTMLElement>(selector) ?? [])
     if (buttons.length === 0) return
     const active = document.activeElement
@@ -93,9 +137,9 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   const getOsdControls = () =>
     Array.from(
       osdRef.current?.querySelectorAll<HTMLElement>(
-        '.player-osd button:not([disabled]), .player-osd input[type="range"]',
+        '.player-osd button:not([disabled]), .player-osd input[type="range"], .playback-prompts button',
       ) ?? [],
-    ).filter((el) => el.offsetParent !== null && !el.closest('.subtitle-menu, .audio-menu'))
+    ).filter((el) => el.offsetParent !== null && !el.closest('.subtitle-menu, .audio-menu, .player-menu'))
 
   const focusOsdControl = (direction: 'left' | 'right' | 'up' | 'down') => {
     showOsd(true)
@@ -106,6 +150,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(slider, String(value))
       slider.dispatchEvent(new Event('input', { bubbles: true }))
       slider.dispatchEvent(new Event('change', { bubbles: true }))
+      if (slider.getAttribute('aria-label') === 'Seek') setSeekPreview((Number(slider.value) / 1000) * (videoRef.current?.duration || 0))
       return
     }
     const controls = getOsdControls()
@@ -121,21 +166,18 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   }
 
   const activateFocusedControl = () => {
+    if (promptsRef.current.visible && openMenuRef.current === 'none') { promptsRef.current.playNext(); return true }
     const active = document.activeElement
     if (
       active instanceof HTMLElement &&
       active.tagName === 'BUTTON' &&
-      active.closest('.subtitle-menu, .audio-menu, .player-osd')
+      active.closest('.subtitle-menu, .audio-menu, .player-osd, .playback-prompts')
     ) {
       active.click()
       return true
     }
-    if (openMenuRef.current === 'subtitles') {
-      focusMenu('subtitles')
-      return true
-    }
-    if (openMenuRef.current === 'audio') {
-      focusMenu('audio')
+    if (openMenuRef.current !== 'none') {
+      focusMenu(openMenuRef.current)
       return true
     }
     if (osdVisibleRef.current) {
@@ -153,7 +195,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       const next = current === menu ? 'none' : menu
       if (next !== 'none') {
         window.setTimeout(() => {
-          const selector = next === 'subtitles' ? '.subtitle-menu button' : '.audio-menu button'
+          const selector = menuSelector(next)
           osdRef.current?.querySelector<HTMLElement>(selector)?.focus()
         }, 30)
       }
@@ -232,6 +274,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
     const startPlayback = () => {
       if (startMs > 0) video.currentTime = startMs / 1000
+      video.playbackRate = settingsRef.current.speed
       setSubtitleMode(playback.selectedSubtitleIndex)
       void video.play().catch(() => undefined)
     }
@@ -252,9 +295,10 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     }
   }
 
-  const reloadPlayback = async (options: { audioStreamIndex?: number; subtitleStreamIndex?: number | null; forceTranscode?: boolean }) => {
+  const reloadPlayback = async (options: PlaybackOptions) => {
     const video = videoRef.current
     if (!video) return
+    const revision = ++reloadRevision.current
     const resumeAt = video.currentTime
     setLoading(true)
     setError(null)
@@ -266,12 +310,15 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       }
       const playback = await createPlaybackSession(session, item, {
         startPositionTicks: msToTicks(resumeAt * 1000),
-        audioStreamIndex: playbackRef.current?.selectedAudioIndex ?? undefined,
+        audioStreamIndex: previous?.audioTracks.find((track) => track.index === previous.selectedAudioIndex)?.isDefault ? undefined : previous?.selectedAudioIndex ?? undefined,
         subtitleStreamIndex: playbackRef.current?.selectedSubtitleIndex,
+        maxBitrate: settingsRef.current.maxBitrate,
+        maxHeight: settingsRef.current.maxHeight,
         ...options,
       })
-      if (!mounted.current) return
+      if (!mounted.current || revision !== reloadRevision.current) return
       playbackRef.current = playback
+      setPlaybackInfo(playback)
       setSubtitles(playback.subtitles)
       setAudioTracks(playback.audioTracks)
       setActiveAudio(playback.selectedAudioIndex)
@@ -280,6 +327,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       setLoading(false)
       showOsd(true)
     } catch (err) {
+      if (!mounted.current || revision !== reloadRevision.current) return
       setError(err instanceof Error ? err.message : 'Unable to change playback stream')
       setLoading(false)
     }
@@ -312,9 +360,10 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       setLoading(true)
       setError(null)
       try {
-        const playback = await createPlaybackSession(session, item)
+        const playback = await createPlaybackSession(session, item, { startPositionTicks, maxBitrate: settingsRef.current.maxBitrate, maxHeight: settingsRef.current.maxHeight })
         if (cancelled) return
         playbackRef.current = playback
+        setPlaybackInfo(playback)
         setSubtitles(playback.subtitles)
         setAudioTracks(playback.audioTracks)
         setActiveAudio(playback.selectedAudioIndex)
@@ -333,6 +382,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     return () => {
       cancelled = true
       mounted.current = false
+      reloadRevision.current += 1
       const video = videoElement
       const playback = playbackRef.current
       if (playback && video) {
@@ -346,10 +396,11 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       }
       if (hideTimer.current) window.clearTimeout(hideTimer.current)
     }
-  }, [session, item])
+  }, [session, item, startPositionTicks])
 
   useEffect(() => {
     const onBackEvent = () => {
+      if (promptsRef.current.visible) { promptsRef.current.cancel(); return }
       if (openMenuRef.current !== 'none') {
         setOpenMenu('none')
         showOsd()
@@ -402,8 +453,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           break
         case 'ArrowUp':
           event.preventDefault()
-          if (openMenuRef.current === 'subtitles') focusMenu('subtitles', -1)
-          else if (openMenuRef.current === 'audio') focusMenu('audio', -1)
+          if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, -1)
           else if (osdVisibleRef.current) focusOsdControl('up')
           else {
             showOsd(true)
@@ -412,8 +462,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           break
         case 'ArrowDown':
           event.preventDefault()
-          if (openMenuRef.current === 'subtitles') focusMenu('subtitles', 1)
-          else if (openMenuRef.current === 'audio') focusMenu('audio', 1)
+          if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, 1)
           else if (osdVisibleRef.current) focusOsdControl('down')
           break
         case '[':
@@ -440,7 +489,8 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           break
         case 'Escape':
           event.preventDefault()
-          if (openMenuRef.current !== 'none') setOpenMenu('none')
+          if (promptsRef.current.visible) promptsRef.current.cancel()
+          else if (openMenuRef.current !== 'none') setOpenMenu('none')
           else if (osdVisibleRef.current) setOsdVisible(false)
           else onBack()
           break
@@ -485,14 +535,15 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       }
 
       if (justPressed(currentPad, 0)) {
-        if (openMenuRef.current !== 'none' || osdVisibleRef.current) {
+        if (openMenuRef.current !== 'none' || osdVisibleRef.current || promptsRef.current.visible || promptsRef.current.segment) {
           if (!activateFocusedControl()) togglePlay()
         } else {
           togglePlay()
         }
       }
       if (justPressed(currentPad, 1)) {
-        if (openMenuRef.current !== 'none') {
+        if (promptsRef.current.visible) promptsRef.current.cancel()
+        else if (openMenuRef.current !== 'none') {
           setOpenMenu('none')
           showOsd()
         } else if (osdVisibleRef.current) {
@@ -502,10 +553,11 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
         }
       }
       if (justPressed(currentPad, 3)) void toggleFullscreen()
+      if (justPressed(currentPad, 8)) openTrackMenu('info')
+      if (justPressed(currentPad, 9)) togglePlay()
       if (justPressed(currentPad, 2)) openTrackMenu('subtitles')
       if (justPressed(currentPad, 12)) {
-        if (openMenuRef.current === 'subtitles') focusMenu('subtitles', -1)
-        else if (openMenuRef.current === 'audio') focusMenu('audio', -1)
+        if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, -1)
         else if (osdVisibleRef.current) focusOsdControl('up')
         else {
           showOsd(true)
@@ -513,8 +565,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
         }
       }
       if (justPressed(currentPad, 13)) {
-        if (openMenuRef.current === 'subtitles') focusMenu('subtitles', 1)
-        else if (openMenuRef.current === 'audio') focusMenu('audio', 1)
+        if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, 1)
         else if (osdVisibleRef.current) focusOsdControl('down')
       }
       if (justPressed(currentPad, 14)) {
@@ -556,12 +607,26 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   }
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
+  const thumbnail = seekPreview != null && playbackInfo ? trickplayThumbnail(session, playbackInfo.item, playbackInfo.mediaSourceId, seekPreview) : null
+  const thumbnailPath = thumbnail?.url
+  useEffect(() => {
+    if (!thumbnailPath) return
+    let disposed = false
+    let objectUrl: string | undefined
+    getTrickplayImage(session, thumbnailPath).then((blob) => {
+      if (disposed) return
+      objectUrl = URL.createObjectURL(blob)
+      setThumbnailImage({ path: thumbnailPath, url: objectUrl })
+    }).catch(() => undefined)
+    return () => { disposed = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [thumbnailPath, session])
 
   return (
     <div
       className={`player-shell ${osdVisible ? 'osd-visible' : 'osd-hidden'}`}
       onMouseMove={() => showOsd()}
     >
+      <style>{`.player-video::cue { font-size: ${settings.subtitleSize}%; color: ${settings.subtitleColor}; background-color: ${settings.subtitleBackground ? 'rgba(0,0,0,0.75)' : 'transparent'}; text-shadow: ${settings.subtitleOutline ? '1px 1px 2px black, -1px -1px 2px black' : 'none'}; }`}</style>
       <div className={`player-top ${osdVisible ? 'is-visible' : ''}`}>
         <button type="button" className="ghost" onClick={onBack}>
           ← Back
@@ -575,7 +640,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       {error ? <p className="error banner">{error}</p> : null}
       {loading && !error ? <p className="muted banner">Starting playback…</p> : null}
 
-      <div className="player-stage">
+      <div className="player-stage" ref={osdRef}>
         <video
           ref={videoRef}
           className="player-video"
@@ -619,7 +684,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           }}
           onEnded={() => {
             void sendProgress(true)
-            onBack()
+            if (!promptsRef.current.ended()) onBack()
           }}
         >
           {subtitles.filter((track) => !track.burnIn).map((track) => (
@@ -631,12 +696,20 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
               srcLang={track.language || 'und'}
               label={track.label}
               default={activeSubtitle === track.index}
-              onLoad={() => setSubtitleMode(activeSubtitle)}
+              onLoad={() => { setSubtitleMode(activeSubtitle); applySubtitleStyle() }}
             />
           ))}
         </video>
 
-        <div ref={osdRef} className={`player-osd ${osdVisible ? 'is-visible' : ''}`}>
+        <div className="playback-prompts">
+          {prompts.segment && !settings.autoSkip ? <button ref={prompts.skipButton} className="primary skip-segment" onClick={prompts.skip}>Skip {prompts.segment.Type === 'Outro' ? 'Credits' : prompts.segment.Type} · A</button> : null}
+          {prompts.visible ? <div className="up-next"><p className="brand">Up next · {prompts.remaining} s</p><h3>{prompts.next?.Name}</h3><button className="primary" ref={prompts.nextButton} onClick={prompts.playNext}>Play now · A</button><button className="ghost" onClick={prompts.cancel}>Cancel · B</button></div> : null}
+        </div>
+        <div className={`player-osd ${osdVisible ? 'is-visible' : ''}`}>
+          <PlayerMenus menu={openMenu} settings={settings} update={updateSettings} playback={playbackInfo} close={() => setOpenMenu('none')} quality={(maxBitrate, maxHeight) => { updateSettings({ maxBitrate, maxHeight }); void reloadPlayback({ maxBitrate, maxHeight }) }} />
+          <div className="player-options">
+            {(['speed', 'quality', 'style', 'preferences', 'info'] as ExtraMenu[]).map((menu) => <button key={menu} className="ghost" aria-label={`Open ${menu}`} onClick={() => openTrackMenu(menu)}>{menu === 'speed' ? `${settings.speed}×` : menu === 'style' ? 'Subtitle style' : menu === 'info' ? 'Info · Select' : menu === 'quality' ? 'Quality' : 'Preferences'}</button>)}
+          </div>
           <div className="player-osd-row">
             <div className="player-transport">
               <button type="button" className="osd-btn" onClick={() => seekBy(-30)} aria-label="Rewind 30 seconds">
@@ -781,6 +854,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
           </div>
 
           <div className="player-scrubber">
+            {thumbnail && thumbnailImage && thumbnailImage.path === thumbnailPath ? <div className="trickplay-preview" style={{ left: `${Math.min(85, Math.max(15, (seekPreview! / duration) * 100))}%` }}><div style={{ width: thumbnail.width, height: thumbnail.height, backgroundImage: `url("${thumbnailImage.url}")`, backgroundPosition: `${thumbnail.x}px ${thumbnail.y}px` }} /><span>{formatPlayerTime(seekPreview!)}</span></div> : null}
             <span>{formatPlayerTime(currentTime)}</span>
             <input
               type="range"
@@ -788,10 +862,14 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
               max={1000}
               value={Math.round(progress * 10)}
               aria-label="Seek"
+              onFocus={() => setSeekPreview(videoRef.current?.currentTime ?? 0)}
+              onBlur={() => setSeekPreview(null)}
+              onMouseMove={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setSeekPreview(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * duration) }}
+              onMouseLeave={(event) => { if (document.activeElement !== event.currentTarget) setSeekPreview(null) }}
               style={{
                 background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.22) ${progress}%)`,
               }}
-              onChange={(event) => seekToRatio(Number(event.target.value) / 1000)}
+              onChange={(event) => { const ratio = Number(event.target.value) / 1000; setSeekPreview(ratio * duration); seekToRatio(ratio) }}
             />
             <span>{remainingLabel}</span>
           </div>
@@ -799,7 +877,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       </div>
 
       <p className={`hint player-hint ${osdVisible ? 'is-visible' : ''}`}>
-        A select/play · B back · X subtitles · Y fullscreen · D-pad moves OSD when visible · LB/RB ±30s
+        A select/play · B cancel/back · X subtitles · Y fullscreen · Select info · Start pause · LB/RB ±30s
       </p>
     </div>
   )

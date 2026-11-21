@@ -5,6 +5,7 @@ import {
   getEpisodes,
   getItem,
   getSeasons,
+  getNextUp,
   isPlayableItem,
   isSeasonItem,
   isSeriesItem,
@@ -18,7 +19,7 @@ type DetailScreenProps = {
   item: JellyfinItem
   onBack: () => void
   onOpenItem: (item: JellyfinItem) => void
-  onPlay: (item: JellyfinItem) => void
+  onPlay: (item: JellyfinItem, startPositionTicks?: number) => void
   onSignOut: () => void
 }
 
@@ -35,6 +36,16 @@ export function DetailScreen({
   const [children, setChildren] = useState<JellyfinItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [starting, setStarting] = useState(false)
+  const playSeries = async () => {
+    setStarting(true)
+    try {
+      const next = await getNextUp(session, item.Id)
+      if (next) onPlay(next)
+      else setError('No episodes available to play')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to find the next episode') }
+    finally { setStarting(false) }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -135,6 +146,8 @@ export function DetailScreen({
                     {item.UserData?.PlaybackPositionTicks ? 'Resume' : 'Play'}
                   </button>
                 ) : null}
+                {playable && item.UserData?.PlaybackPositionTicks ? <button className="ghost" data-focus-key="start-over" onClick={() => onPlay(item, 0)}>Start over</button> : null}
+                {isSeriesItem(item) ? <button className="primary" disabled={starting} data-focus-key="play-series" onClick={() => void playSeries()}>{starting ? 'Loading…' : 'Play Next Up'}</button> : null}
                 {!playable && !loading ? (
                   <p className="muted">Choose a season or episode below.</p>
                 ) : null}

@@ -20,12 +20,13 @@ import { DetailScreen } from './screens/DetailScreen'
 import { PlayerScreen } from './screens/PlayerScreen'
 import './styles.css'
 
-type ViewState =
-  | { screen: 'login' }
+type BrowseView =
   | { screen: 'home' }
   | { screen: 'library'; library: JellyfinItem }
-  | { screen: 'detail'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
-  | { screen: 'player'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
+  | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
+type ViewState = BrowseView | { screen: 'login' }
+  | { screen: 'prompt'; item: JellyfinItem; returnTo: BrowseView }
+  | { screen: 'player'; item: JellyfinItem; startPositionTicks?: number; returnTo: BrowseView }
 
 function App() {
   const [loginMessage, setLoginMessage] = useState<string | null>(null)
@@ -48,7 +49,7 @@ function App() {
 
   useEffect(() => {
     const onBack = () => {
-      if (view.screen === 'detail') {
+      if (view.screen === 'detail' || view.screen === 'prompt') {
         setView(view.returnTo)
       } else if (view.screen === 'library') {
         setView({ screen: 'home' })
@@ -66,7 +67,7 @@ function App() {
 
   const openItem = (
     item: JellyfinItem,
-    returnTo: Exclude<ViewState, { screen: 'login' | 'player' }>,
+    returnTo: BrowseView,
   ) => {
     setView({ screen: 'detail', item, returnTo })
   }
@@ -86,11 +87,25 @@ function App() {
   if (view.screen === 'player') {
     return (
       <PlayerScreen
+        key={view.item.Id}
         session={session}
         item={view.item}
+        startPositionTicks={view.startPositionTicks}
+        onNext={(item) => setView({ ...view, item, startPositionTicks: 0 })}
         onBack={() => setView(view.returnTo)}
       />
     )
+  }
+
+  if (view.screen === 'prompt') {
+    return <div className="resume-prompt app-shell" role="dialog" aria-label="Resume playback">
+      <p className="brand">Continue Watching</p><h1>{view.item.Name}</h1>
+      <div className="detail-actions">
+        <button className="primary" autoFocus onClick={() => setView({ ...view, screen: 'player' })}>Resume</button>
+        <button className="ghost" onClick={() => setView({ ...view, screen: 'player', startPositionTicks: 0 })}>Start over</button>
+        <button className="ghost" onClick={() => setView(view.returnTo)}>Cancel</button>
+      </div>
+    </div>
   }
 
   if (view.screen === 'detail') {
@@ -102,7 +117,7 @@ function App() {
         onBack={() => setView(view.returnTo)}
         onSignOut={signOut}
         onOpenItem={(item) => openItem(item, view)}
-        onPlay={(item) => setView({ screen: 'player', item, returnTo: view })}
+        onPlay={(item, startPositionTicks) => setView({ screen: 'player', item, startPositionTicks, returnTo: view })}
       />
     )
   }
@@ -124,6 +139,7 @@ function App() {
       session={session}
       onOpenLibrary={(library) => setView({ screen: 'library', library })}
       onOpenItem={(item) => openItem(item, { screen: 'home' })}
+      onResume={(item) => setView({ screen: 'prompt', item, returnTo: { screen: 'home' } })}
       onSignOut={signOut}
     />
   )
@@ -208,11 +224,13 @@ function HomeScreen({
   onOpenLibrary,
   onOpenItem,
   onSignOut,
+  onResume,
 }: {
   session: JellyfinSession
   onOpenLibrary: (library: JellyfinItem) => void
   onOpenItem: (item: JellyfinItem) => void
   onSignOut: () => void
+  onResume: (item: JellyfinItem) => void
 }) {
   useScreenMemory('home')
   const [mediaLibraries, setMediaLibraries] = useState<JellyfinItem[]>([])
@@ -326,7 +344,7 @@ function HomeScreen({
                 item={item}
                 subtitle={resumeSubtitle(item)}
                 progress={item.UserData?.PlayedPercentage}
-                onSelect={() => onOpenItem(item)}
+                onSelect={() => onResume(item)}
               />
             ))}
           </div>
