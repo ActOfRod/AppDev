@@ -15,8 +15,10 @@ const click = async (selector, text) => {
   await wait(`Boolean(${q})`)
   const point = await evaluate(`(()=>{const e=${q};e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+  await frames()
 }
-const pad = async (index) => { await evaluate(`window.testPad.buttons[${index}].pressed=true`); await new Promise((r) => setTimeout(r, 80)); await evaluate(`window.testPad.buttons[${index}].pressed=false`); await new Promise((r) => setTimeout(r, 80)) }
+const frames = () => evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+const pad = async (index) => { await frames(); await evaluate(`window.testPad.buttons[${index}].pressed=true`); await frames(); await evaluate(`window.testPad.buttons[${index}].pressed=false`); await frames() }
 const screenshots = '/home/ubuntu/shots/phase3'
 const stage = ['library', 'person', 'search', 'settings', 'music', 'profiles', 'polish', 'extras', 'avatar', 'hero', 'collection'].indexOf(process.env.RESUME_PHASE3)
 const run = (n) => !process.env.RESUME_PHASE3 || n >= stage
@@ -87,9 +89,12 @@ assert.ok(await evaluate(`JSON.parse(localStorage.getItem('valvefin.searches')).
 console.log('PASS controller keyboard D-pad/A input, debounced grouped results and recent searches')
 }
 if (run(3)) {
+await click('.nav-rail button', 'Home')
+await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences(p.preferenceDefaults)})()`)
 await click('.nav-rail button', 'Settings')
 await click('button', 'Move favorites up')
 await click('button', 'Latest in Movies: Shown')
+await click('button', 'Accent: #5d55e7')
 await click('button', 'Accent: #8b72ff')
 await click('button', 'Launch fullscreen: On')
 await shot('settings')
@@ -135,6 +140,7 @@ console.log('PASS profile picker and live Quick Connect approval/poll/exchange r
 }
 if (run(6)) {
 await evaluate(`(async()=>{
+ if(window.nativeFetch)window.fetch=window.nativeFetch;
  const m=await import('/src/lib/jellyfin.ts');const s=m.loadSession();const lib=(await m.getViews(s)).find(l=>l.Name==='Movies');window.testLibrary=lib.Id;localStorage.removeItem('valvefin.library.'+lib.Id);
  window.nativeFetch=window.fetch;window.mockMode='pages';window.mockOffsets=[];
  window.fetch=async (input,init)=>{const u=new URL(typeof input==='string'?input:input.url,location.href);

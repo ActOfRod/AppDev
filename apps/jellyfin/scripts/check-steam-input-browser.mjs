@@ -23,7 +23,7 @@ const wait = async (expression) => {
   for (let i = 0; i < 200; i++) { if (await evaluate(`Boolean(${expression})`)) return; await new Promise((r) => setTimeout(r, 50)) }
   throw Error(`Timed out: ${expression}; ${await evaluate('JSON.stringify({text:document.body.innerText.slice(0,500),pad:window.steamPads?.[3]})')}`)
 }
-const frames = () => evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+const frames = () => evaluate('await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
 const neutral = async (expression) => {
   await evaluate(`window.steamNeutralBefore=window.steamNeutralReads;${expression}`)
   await wait('window.steamNeutralReads>window.steamNeutralBefore')
@@ -37,12 +37,12 @@ const hide = async () => {
 }
 const pad = async (index) => {
   await evaluate(`window.steamPads[3].buttons[${index}].pressed=true`)
-  await new Promise((r) => setTimeout(r, 90))
+  await frames()
   await neutral(`window.steamPads[3].buttons[${index}].pressed=false`)
 }
 const bothA = async () => {
   await evaluate(`window.steamPads[0].buttons[0].pressed=true;window.steamPads[3].buttons[0].pressed=true`)
-  await new Promise((r) => setTimeout(r, 90))
+  await frames()
   await neutral(`window.steamPads[0].buttons[0].pressed=false;window.steamPads[3].buttons[0].pressed=false`)
 }
 try {
