@@ -27,6 +27,39 @@ export function libraryQuery(id: string, o: LibraryOptions, start: number) {
     Genres: o.genre, Years: o.year, NameStartsWith: o.letter, MinWidth: o.resolution === '4K' ? 3800 : o.resolution === 'HD' ? 1280 : undefined,
     MaxWidth: o.resolution === 'SD' ? 1279 : undefined }
 }
+export function createLibraryLoader(s: JellyfinSession, id: string, options: LibraryOptions) {
+  let snapshot: Promise<string[]> | null = null
+  const discover = async () => {
+    const ids = new Set<string>()
+    let offset = 0
+    while (true) {
+      const page = await queryItems(s, { ...libraryQuery(id, options, offset), SortBy: 'SortName', Limit: 1000, Fields: 'DateCreated', EnableImages: 'false', EnableUserData: 'false' })
+      for (const item of page.Items) ids.add(item.Id)
+      offset += page.Items.length
+      if (!page.Items.length || offset >= page.TotalRecordCount) break
+    }
+    const order = [...ids]
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[order[i], order[j]] = [order[j], order[i]]
+    }
+    return order
+  }
+  return async (start: number) => {
+    if (options.sort !== 'Random') return queryItems(s, libraryQuery(id, options, start))
+    snapshot ??= discover().catch((error) => { snapshot = null; throw error })
+    let ids = await snapshot
+    while (true) {
+      const pageIds = ids.slice(start, start + 60)
+      if (!pageIds.length) return { Items: [], TotalRecordCount: ids.length }
+      const page = await queryItems(s, { Ids: pageIds.join(','), StartIndex: 0, Limit: 60 })
+      const byId = new Map(page.Items.map((item) => [item.Id, item]))
+      const missing = new Set(pageIds.filter((id) => !byId.has(id)))
+      if (missing.size) { ids = ids.filter((id) => !missing.has(id)); snapshot = Promise.resolve(ids); continue }
+      return { Items: pageIds.map((id) => byId.get(id)!), TotalRecordCount: ids.length }
+    }
+  }
+}
 export function savedProfiles(): JellyfinSession[] { try { const x = JSON.parse(localStorage.getItem('valvefin.profiles') ?? '[]'); return Array.isArray(x) ? x.filter((p) => p.serverUrl && p.userId && p.accessToken) : [] } catch { return [] } }
 export function rememberProfile(s: JellyfinSession) {
   localStorage.setItem('valvefin.profiles', JSON.stringify([...savedProfiles().filter((p) => p.serverUrl !== s.serverUrl || p.userId !== s.userId), s]))

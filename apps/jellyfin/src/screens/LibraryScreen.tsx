@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, EditButton } from '../components/Browse'
-import { libraryQuery, loadLibrary, queryItems, type LibraryOptions } from '../lib/catalog'
+import { createLibraryLoader, loadLibrary, type LibraryOptions } from '../lib/catalog'
 import type { JellyfinItem, JellyfinSession } from '../lib/jellyfin'
 import { usePagedItems } from '../hooks/usePagedItems'
 import { useScreenMemory } from '../hooks/useScreenMemory'
@@ -13,7 +13,7 @@ export function LibraryScreen({ session, library, open }: { session: JellyfinSes
   const memoryKey = `library:${library.Id}:${JSON.stringify(options)}`
   const [anchor, setAnchor] = useState(() => focusMemory.get(memoryKey))
   const update = (patch: Partial<LibraryOptions>) => set((old) => { const next = { ...old, ...patch }; localStorage.setItem(`valvefin.library.${library.Id}`, JSON.stringify(next)); return next })
-  const load = useCallback((start: number) => queryItems(session, libraryQuery(library.Id, options, start)), [session, library.Id, options])
+  const load = useMemo(() => createLibraryLoader(session, library.Id, options), [session, library.Id, options])
   const { items, total, more, hasMore, sentinel, loading, error } = usePagedItems(load, memoryKey)
   const grid = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ y: window.scrollY, width: window.innerWidth })
