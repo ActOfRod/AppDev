@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker, shell } from 'electron'
 import path from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import dgram from 'node:dgram'
 
 process.env.DIST = path.join(__dirname, '../dist')
 process.env.VITE_PUBLIC = app.isPackaged
@@ -7,6 +9,14 @@ process.env.VITE_PUBLIC = app.isPackaged
   : path.join(process.env.DIST, '../public')
 
 let mainWindow: BrowserWindow | null = null
+type DesktopState = { fullscreen?: boolean; bounds?: { x?: number; y?: number; width: number; height: number } }
+let desktopState: DesktopState = {}
+const stateFile = path.join(app.getPath('userData'), 'desktop-state.json')
+try { desktopState = JSON.parse(readFileSync(stateFile, 'utf8')) } catch { /* first launch */ }
+function saveDesktopState() { try { writeFileSync(stateFile, JSON.stringify(desktopState)) } catch { /* read-only profile */ } }
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) app.quit()
+app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus() })
 let playbackBlocker: number | null = null
 function stopPlaybackBlocker() {
   if (playbackBlocker !== null) powerSaveBlocker.stop(playbackBlocker)
@@ -19,6 +29,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1920,
     height: 1080,
+    ...desktopState.bounds,
+    fullscreen: desktopState.fullscreen !== false,
     minWidth: 1280,
     minHeight: 720,
     backgroundColor: '#111827',
@@ -34,10 +46,11 @@ function createWindow() {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   mainWindow.on('closed', stopPlaybackBlocker)
+  mainWindow.on('close', () => { desktopState.bounds = mainWindow?.getNormalBounds(); saveDesktopState() })
   mainWindow.webContents.on('render-process-gone', stopPlaybackBlocker)
   mainWindow.webContents.on('did-start-navigation', stopPlaybackBlocker)
 
@@ -67,7 +80,33 @@ ipcMain.handle('playback:active', (event, active: boolean) => {
 })
 app.on('before-quit', stopPlaybackBlocker)
 
+ipcMain.handle('preferences:fullscreen', (event, enabled: boolean) => {
+  if (event.sender !== mainWindow?.webContents || typeof enabled !== 'boolean') return
+  desktopState.fullscreen = enabled; saveDesktopState()
+})
+ipcMain.handle('cache:clear', async (event) => { if (event.sender === mainWindow?.webContents) await event.sender.session.clearCache() })
+ipcMain.handle('external:open', async (event, url: string) => {
+  if (event.sender !== mainWindow?.webContents || typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw Error('Invalid trailer URL')
+  await shell.openExternal(url)
+})
+ipcMain.handle('servers:discover', async (event) => {
+  if (event.sender !== mainWindow?.webContents) return []
+  return new Promise<{ Address: string; Name: string }[]>((resolve) => {
+    const socket = dgram.createSocket('udp4')
+    const servers = new Map<string, { Address: string; Name: string }>()
+    let finished = false
+    const finish = () => { if (finished) return; finished = true; clearTimeout(timer); try { socket.close() } catch { /* closed socket */ } resolve([...servers.values()]) }
+    const timer = setTimeout(finish, 2500)
+    socket.on('error', finish)
+    socket.on('message', (buffer) => {
+      try { const data = JSON.parse(buffer.toString()); const url = new URL(data.Address); if (['http:', 'https:'].includes(url.protocol)) servers.set(url.href, { Address: url.href.replace(/\/$/, ''), Name: String(data.Name || 'Jellyfin') }) } catch { /* other LAN datagrams */ }
+    })
+    socket.bind(0, () => { socket.setBroadcast(true); const payload = Buffer.from('Who is JellyfinServer?'); socket.send(payload, 7359, '255.255.255.255', () => undefined); socket.send(payload, 7359, '127.0.0.1', () => undefined) })
+  })
+})
+
 app.whenReady().then(() => {
+  if (!primaryInstance) return
   createWindow()
 
   app.on('activate', () => {

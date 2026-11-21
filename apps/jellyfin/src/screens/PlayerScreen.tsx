@@ -28,9 +28,10 @@ type PlayerScreenProps = {
   onBack: () => void
   onNext: (item: JellyfinItem) => void
   startPositionTicks?: number
+  mediaSourceId?: string
 }
 
-export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks }: PlayerScreenProps) {
+export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks, mediaSourceId }: PlayerScreenProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const playbackRef = useRef<PlaybackSession | null>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -314,6 +315,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
         subtitleStreamIndex: playbackRef.current?.selectedSubtitleIndex,
         maxBitrate: settingsRef.current.maxBitrate,
         maxHeight: settingsRef.current.maxHeight,
+        mediaSourceId: playbackRef.current?.mediaSourceId,
         ...options,
       })
       if (!mounted.current || revision !== reloadRevision.current) return
@@ -360,7 +362,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       setLoading(true)
       setError(null)
       try {
-        const playback = await createPlaybackSession(session, item, { startPositionTicks, maxBitrate: settingsRef.current.maxBitrate, maxHeight: settingsRef.current.maxHeight })
+        const playback = await createPlaybackSession(session, item, { startPositionTicks, mediaSourceId, maxBitrate: settingsRef.current.maxBitrate, maxHeight: settingsRef.current.maxHeight })
         if (cancelled) return
         playbackRef.current = playback
         setPlaybackInfo(playback)
@@ -396,7 +398,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       }
       if (hideTimer.current) window.clearTimeout(hideTimer.current)
     }
-  }, [session, item, startPositionTicks])
+  }, [session, item, startPositionTicks, mediaSourceId])
 
   useEffect(() => {
     const onBackEvent = () => {

@@ -1,3 +1,5 @@
+import { loadPreferences } from './preferences.ts'
+
 export type JellyfinSession = {
   serverUrl: string
   accessToken: string
@@ -27,6 +29,8 @@ export type JellyfinItem = {
     PlaybackPositionTicks?: number
     PlayedPercentage?: number
     UnplayedItemCount?: number
+    Played?: boolean
+    IsFavorite?: boolean
   }
   SeriesName?: string
   SeriesId?: string
@@ -36,11 +40,20 @@ export type JellyfinItem = {
   IndexNumber?: number
   MediaType?: string
   Trickplay?: Record<string, Record<string, TrickplayInfo>>
+  Taglines?: string[]
+  Genres?: string[]
+  People?: { Id: string; Name: string; Type: string; Role?: string; PrimaryImageTag?: string }[]
+  Chapters?: { Name: string; StartPositionTicks: number; ImageTag?: string }[]
+  RemoteTrailers?: { Url: string; Name?: string }[]
+  MediaSources?: MediaSource[]
+  Artists?: string[]
+  Album?: string
+  AlbumId?: string
 }
 
 export type TrickplayInfo = { Width: number; Height: number; TileWidth: number; TileHeight: number; ThumbnailCount: number; Interval: number }
 export type MediaSegment = { Id: string; Type: 'Intro' | 'Outro' | 'Recap' | 'Preview'; StartTicks: number; EndTicks: number }
-export type PlaybackOptions = { startPositionTicks?: number; audioStreamIndex?: number | null; subtitleStreamIndex?: number | null; forceTranscode?: boolean; maxBitrate?: number; maxHeight?: number }
+export type PlaybackOptions = { startPositionTicks?: number; audioStreamIndex?: number | null; subtitleStreamIndex?: number | null; forceTranscode?: boolean; maxBitrate?: number; maxHeight?: number; mediaSourceId?: string }
 
 export type SubtitleTrack = {
   index: number
@@ -74,7 +87,7 @@ export type PlaybackSession = {
   info: { videoCodec?: string; audioCodec?: string; width?: number; height?: number; bitrate?: number; transcodeReasons: string[] }
 }
 
-type MediaStream = {
+export type MediaStream = {
   Index: number
   Type: string
   Codec?: string
@@ -88,9 +101,11 @@ type MediaStream = {
   IsHearingImpaired?: boolean
   Width?: number
   Height?: number
+  VideoRangeType?: string
+  Channels?: number
 }
 
-type MediaSource = {
+export type MediaSource = {
   Id: string
   Name?: string
   Container?: string
@@ -156,7 +171,7 @@ function authHeader(deviceId: string, token?: string): string {
   return `MediaBrowser ${parts.join(', ')}`
 }
 
-async function jellyfinFetch<T>(
+export async function jellyfinFetch<T>(
   serverUrl: string,
   path: string,
   options: {
@@ -437,7 +452,7 @@ export function isSeasonItem(item: JellyfinItem): boolean {
 
 export async function getItem(session: JellyfinSession, itemId: string): Promise<JellyfinItem> {
   const params = new URLSearchParams({
-    Fields: 'Overview,ProductionYear,CommunityRating,OfficialRating,MediaStreams,People,RecursiveItemCount,Trickplay',
+    Fields: 'Overview,ProductionYear,CommunityRating,OfficialRating,MediaSources,MediaStreams,People,RecursiveItemCount,Trickplay,Genres,Taglines,Chapters,RemoteTrailers,ParentId',
   })
   return jellyfinFetch<JellyfinItem>(
     session.serverUrl,
@@ -696,12 +711,14 @@ async function requestPlaybackInfo(
     subtitleStreamIndex?: number | null
     maxBitrate?: number
     maxHeight?: number
+    mediaSourceId?: string
   },
 ): Promise<PlaybackInfoResponse> {
   const params = new URLSearchParams({ UserId: session.userId, StartTimeTicks: String(options.startPositionTicks), EnableDirectPlay: String(!options.forceTranscode), EnableDirectStream: String(!options.forceTranscode) })
   if (options.audioStreamIndex != null) params.set('AudioStreamIndex', String(options.audioStreamIndex))
   if (options.subtitleStreamIndex != null) params.set('SubtitleStreamIndex', String(options.subtitleStreamIndex))
   if (options.maxBitrate) params.set('MaxStreamingBitrate', String(options.maxBitrate))
+  if (options.mediaSourceId) params.set('MediaSourceId', options.mediaSourceId)
   const profile = chromiumDeviceProfile()
   const deviceProfile = { ...profile,
     MaxStreamingBitrate: options.maxBitrate || profile.MaxStreamingBitrate,
@@ -742,20 +759,21 @@ export async function createPlaybackSession(
   const startPositionTicks =
     options?.startPositionTicks ?? item.UserData?.PlaybackPositionTicks ?? 0
 
-  const probe = await requestPlaybackInfo(session, item.Id, { startPositionTicks, maxBitrate: options?.maxBitrate, maxHeight: options?.maxHeight })
-  const probeSource = probe.MediaSources?.[0]
+  const probe = await requestPlaybackInfo(session, item.Id, { startPositionTicks, maxBitrate: options?.maxBitrate, maxHeight: options?.maxHeight, mediaSourceId: options?.mediaSourceId })
+  const probeSource = (options?.mediaSourceId ? probe.MediaSources?.find((s) => s.Id === options.mediaSourceId) : probe.MediaSources?.[0])
   if (!probeSource) {
     throw new Error('No playable media source found for this title')
   }
 
   const audioTracks = collectAudioTracks(probeSource)
+  const prefs = loadPreferences()
   const selectedAudioIndex =
     options?.audioStreamIndex !== undefined
       ? options.audioStreamIndex
-      : pickPreferredAudioIndex(probeSource.MediaStreams ?? [])
+      : probeSource.MediaStreams?.find((s) => s.Type === 'Audio' && prefs.audioLanguage && s.Language === prefs.audioLanguage)?.Index ?? pickPreferredAudioIndex(probeSource.MediaStreams ?? [])
   const subtitle = options?.subtitleStreamIndex !== undefined
     ? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.Index === options.subtitleStreamIndex)
-    : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.IsForced) ?? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && (s.Index === probeSource.DefaultSubtitleStreamIndex || s.IsDefault))
+    : prefs.subtitleMode === 'off' ? undefined : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.IsForced) ?? (prefs.subtitleMode === 'forced' ? undefined : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && prefs.subtitleLanguage && s.Language === prefs.subtitleLanguage) ?? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && (s.Index === probeSource.DefaultSubtitleStreamIndex || s.IsDefault)))
   const defaultAudioIndex = probeSource.DefaultAudioStreamIndex ?? probeSource.MediaStreams?.find((s) => s.Type === 'Audio' && s.IsDefault)?.Index
   const video = probeSource.MediaStreams?.find((s) => s.Type === 'Video')
   const qualityLimited = Boolean((options?.maxBitrate && (!probeSource.Bitrate || probeSource.Bitrate > options.maxBitrate)) ||
@@ -772,10 +790,11 @@ export async function createPlaybackSession(
           subtitleStreamIndex: subtitle?.Index ?? -1,
           maxBitrate: options?.maxBitrate,
           maxHeight: options?.maxHeight,
+          mediaSourceId: probeSource.Id,
         })
       : probe
 
-  const source = info.MediaSources?.[0] ?? probeSource
+  const source = info.MediaSources?.find((s) => s.Id === probeSource.Id) ?? probeSource
   let { streamUrl, isTranscoding, playMethod } = buildStreamUrl(
     session,
     item.Id,
@@ -844,6 +863,16 @@ export async function getTrickplayImage(session: JellyfinSession, url: string): 
   }
   if (!response.ok) throw new Error('Trickplay image unavailable')
   return response.blob()
+}
+
+export async function getUserImage(session: JellyfinSession): Promise<Blob | null> {
+  for (const path of [`/UserImage?userId=${session.userId}`, `/Users/${session.userId}/Images/Primary`]) {
+    const response = await fetch(session.serverUrl + path, { headers: { Authorization: authHeader(session.deviceId, session.accessToken) } })
+    if (response.status === 404) continue
+    if (!response.ok) throw new Error('Unable to load profile image')
+    return response.blob()
+  }
+  return null
 }
 
 export async function reportPlaybackStart(

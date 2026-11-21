@@ -6,6 +6,10 @@ const memories = new Map<string, Memory>()
 export function useScreenMemory(key: string) {
   useLayoutEffect(() => {
     const memory = memories.get(key)
+    if (!memory) {
+      window.scrollTo(0, 0)
+      document.querySelector<HTMLElement>('main:not(.home-screen) button')?.focus({ preventScroll: true })
+    }
     let restored = false
     const restore = () => {
       if (!memory || restored) return

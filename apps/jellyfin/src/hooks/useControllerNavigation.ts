@@ -11,7 +11,7 @@ function isVisible(el: HTMLElement): boolean {
   return rect.width > 0 && rect.height > 0
 }
 
-function getFocusable(root: ParentNode = document): HTMLElement[] {
+function getFocusable(root: ParentNode = Array.from(document.querySelectorAll('[data-modal]')).at(-1) ?? document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isVisible)
 }
 
@@ -99,6 +99,7 @@ function moveFocus(direction: Direction) {
 
   const next = findNeighbor(active, direction)
   next?.focus()
+  next?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
 function activateFocused() {
@@ -237,6 +238,8 @@ export function useControllerNavigation(enabled: boolean) {
       if (justPressed(3)) {
         void toggleFullscreen()
       }
+      if (justPressed(2)) window.dispatchEvent(new Event('valvefin:context'))
+      if (justPressed(9)) { if (document.querySelector('[data-modal]')) window.dispatchEvent(new Event('valvefin:activity')); else { document.querySelector<HTMLElement>('.nav-rail button')?.focus(); window.scrollTo({ top: 0 }) } }
 
       // Left stick with cooldown
       if (now >= stickCooldown.current) {
