@@ -525,18 +525,24 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       frame = requestAnimationFrame(poll)
       const video = videoRef.current
       if (!video) return
+      const hidden = !osdVisibleRef.current
+      const handledButtons = new Set<number>()
       for (const input of readPads(navigator.getGamepads?.() ?? [])) {
       const currentPad = input.pad
       if (!input.active) { blockedSticks.delete(currentPad.index); continue }
-      const hidden = !osdVisibleRef.current
       showOsd()
-      const justPressed = (_pad: Gamepad, index: number) => input.pressed.has(index)
+      const justPressed = (_pad: Gamepad, index: number) => {
+        if (!input.pressed.has(index) || handledButtons.has(index)) return false
+        handledButtons.add(index)
+        return true
+      }
       const x = currentPad.axes[0] ?? 0
       const y = currentPad.axes[1] ?? 0
       const stickActive = Math.max(Math.abs(x), Math.abs(y)) > 0.55
       if (!stickActive) blockedSticks.delete(currentPad.index)
-      if (hidden && !input.pressed.has(9)) {
+      if (hidden) {
         if (stickActive) blockedSticks.add(currentPad.index)
+        if (justPressed(currentPad, 9)) togglePlay()
         getOsdControls()[0]?.focus()
         continue
       }

@@ -40,6 +40,11 @@ const pad = async (index) => {
   await new Promise((r) => setTimeout(r, 90))
   await neutral(`window.steamPads[3].buttons[${index}].pressed=false`)
 }
+const bothA = async () => {
+  await evaluate(`window.steamPads[0].buttons[0].pressed=true;window.steamPads[3].buttons[0].pressed=true`)
+  await new Promise((r) => setTimeout(r, 90))
+  await neutral(`window.steamPads[0].buttons[0].pressed=false;window.steamPads[3].buttons[0].pressed=false`)
+}
 try {
   await send('Page.enable')
   await send('Page.navigate', { url: 'http://localhost:5173/scripts/review-harness.html' })
@@ -108,6 +113,13 @@ try {
   await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`)
   await wait('window.steamBack===2')
   console.log('PASS hidden B/Escape reveal only; next B/Escape exits playback instead of trapping the controller in a show/hide loop')
+  await hide(); await bothA()
+  await wait(`document.querySelector('.osd-visible')`)
+  assert.equal(await evaluate(`document.querySelector('video').paused`), false)
+  await evaluate(`document.querySelector('button[aria-label="Pause"]').focus()`)
+  await bothA(); await wait(`document.querySelector('video').paused`)
+  await pad(9); await wait(`!document.querySelector('video').paused`)
+  console.log('PASS mirrored physical/virtual pad presses reveal once, then activate once without double toggling playback')
 
   await evaluate(`window.nativeSteamFetch=window.fetch;window.steamLatestRequests=0;window.steamFocus=0;window.steamDelayLatest=false;window.steamFailResume=false;window.steamFailLatest=false;
     window.jellyfinDesktop={platform:'win32',setPlaybackActive:async()=>false,setLaunchFullscreen:async()=>{},isFullscreen:async()=>false,focusWindow:async()=>{window.steamFocus++}};
@@ -144,7 +156,7 @@ try {
   console.log('PASS real App detail/player return restores renderer focus and cached lower home rows without a click, even while latest refresh remains pending')
   await click(`[...document.querySelectorAll('.nav-rail button')].find(b=>b.textContent==='Settings')`)
   await evaluate(`[...document.querySelectorAll('.settings-screen button')].find(b=>b.textContent.startsWith('Merge Next Up into Continue Watching')).focus()`)
-  await pad(0)
+  await bothA()
   await wait(`document.body.textContent.includes('Merge Next Up into Continue Watching: On')`)
   await click(`document.querySelector('.nav-rail button')`)
   await wait(`${row('Continue Watching')}?.querySelectorAll('.poster-card').length===2`)

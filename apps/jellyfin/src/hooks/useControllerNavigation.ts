@@ -199,11 +199,16 @@ export function useControllerNavigation(enabled: boolean) {
     let frame = 0
     const poll = () => {
       frame = requestAnimationFrame(poll)
+      const handledButtons = new Set<number>()
       for (const input of readPads(navigator.getGamepads?.() ?? [])) {
       const pad = input.pad
 
       const now = performance.now()
-      const justPressed = (index: number) => input.pressed.has(index)
+      const justPressed = (index: number) => {
+        if (!input.pressed.has(index) || handledButtons.has(index)) return false
+        handledButtons.add(index)
+        return true
+      }
 
       // D-pad
       if (justPressed(12)) moveFocus('up')
