@@ -48,8 +48,7 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#111827',
     autoHideMenuBar: true,
-    alwaysOnTop: false,
-    kiosk: false,
+    ...(process.platform === 'win32' ? { alwaysOnTop: false, kiosk: false } : {}),
     fullscreenable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -57,7 +56,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       autoplayPolicy: 'no-user-gesture-required',
-      backgroundThrottling: false,
+      ...(process.platform === 'win32' ? { backgroundThrottling: false } : {}),
     },
   })
 
