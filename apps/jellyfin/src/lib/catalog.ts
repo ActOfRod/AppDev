@@ -1,6 +1,6 @@
 import { jellyfinFetch, saveSession, type JellyfinItem, type JellyfinSession, type ItemPage } from './jellyfin.ts'
 
-export const fields = 'Overview,Genres,Taglines,MediaSources,MediaStreams,People,Chapters,RemoteTrailers,ProductionYear,DateCreated,ParentId'
+export const fields = 'Overview,Genres,Taglines,MediaSources,MediaStreams,People,Chapters,RemoteTrailers,ProductionYear,DateCreated,ParentId,SeriesPrimaryImage'
 export function api<T>(s: JellyfinSession, path: string, method = 'GET', body?: unknown) {
   return jellyfinFetch<T>(s.serverUrl, path, { deviceId: s.deviceId, token: s.accessToken, method, body })
 }

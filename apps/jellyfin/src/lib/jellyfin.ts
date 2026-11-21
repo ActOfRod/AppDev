@@ -35,6 +35,12 @@ export type JellyfinItem = {
   }
   SeriesName?: string
   SeriesId?: string
+  SeriesThumbImageTag?: string
+  SeriesPrimaryImageTag?: string
+  ParentThumbItemId?: string
+  ParentThumbImageTag?: string
+  ParentBackdropItemId?: string
+  ParentBackdropImageTags?: string[]
   SeasonId?: string
   ParentId?: string
   ParentIndexNumber?: number
@@ -281,7 +287,7 @@ export async function getViews(session: JellyfinSession): Promise<JellyfinItem[]
 export async function getResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
   const params = new URLSearchParams({
     Limit: '16',
-    Fields: 'PrimaryImageAspectRatio,BasicSyncInfo,Overview',
+    Fields: 'PrimaryImageAspectRatio,BasicSyncInfo,Overview,ParentId,SeriesPrimaryImage',
     ImageTypeLimit: '1',
     EnableImageTypes: 'Primary,Backdrop,Thumb',
     MediaTypes: 'Video',
