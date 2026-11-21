@@ -3,7 +3,7 @@ export type Preferences = {
   subtitleMode: string; accent: string; idleMinutes: number; fullscreen: boolean
   showOnNow: boolean; mergeNextUp: boolean
 }
-export const preferenceDefaults: Preferences = { rows: ['resume', 'next', 'latest', 'favorites'], hiddenRows: [], audioLanguage: '', subtitleLanguage: '', subtitleMode: 'default', accent: '#8b72ff', idleMinutes: 5, fullscreen: true, showOnNow: true, mergeNextUp: false }
+export const preferenceDefaults: Preferences = { rows: ['resume', 'next', 'latest', 'favorites'], hiddenRows: [], audioLanguage: '', subtitleLanguage: '', subtitleMode: 'default', accent: '#5d55e7', idleMinutes: 5, fullscreen: true, showOnNow: true, mergeNextUp: false }
 const validRow = (x: unknown): x is string => typeof x === 'string' && (preferenceDefaults.rows.includes(x) || /^latest:[a-f0-9-]+$/i.test(x))
 export function homeRowOrder(prefs: Preferences, libraries: { Id: string }[]) {
   const latest = libraries.filter((l: { Id: string; CollectionType?: string }) => l.CollectionType?.toLowerCase() !== 'livetv').map((l) => `latest:${l.Id}`)

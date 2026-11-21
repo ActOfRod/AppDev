@@ -11,7 +11,7 @@ export function Card({ session, item: initial, open }: { session: JellyfinSessio
   const item = useLiveItem(initial)
   const image = itemImageUrl(session, item, { maxWidth: 400 })
   return <button className="poster-card" data-focus-key={item.Id} data-item={JSON.stringify(item)} aria-label={item.Name} onClick={() => open(item)} onContextMenu={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('valvefin:context', { detail: item })) }}>
-    <div className="poster-art" style={image ? { backgroundImage: `url("${image}")` } : undefined}>{!image && <span>{item.Name[0]}</span>}<span className="card-state">{item.UserData?.Played ? '✓' : item.UserData?.UnplayedItemCount ? `${item.UserData.UnplayedItemCount} new` : ''}{item.UserData?.IsFavorite ? ' ♥' : ''}</span></div>
+    <div className="poster-art" style={image ? { backgroundImage: `url("${image}")` } : undefined}>{!image && <span>{item.Name[0]}</span>}<span className={`card-state${item.UserData?.Played ? ' is-played' : ''}`}>{item.UserData?.Played ? '✓' : item.UserData?.UnplayedItemCount ? `${item.UserData.UnplayedItemCount} new` : ''}{item.UserData?.IsFavorite ? ' ♥' : ''}</span></div>
     <div className="poster-meta"><strong>{item.Name}</strong><span>{item.Type} {item.ProductionYear ?? ''}</span></div>
   </button>
 }

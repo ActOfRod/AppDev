@@ -44,7 +44,7 @@ export default function App() {
   const success = useCallback((s: JellyfinSession) => { rememberProfile(s); setSession(s); setMessage(''); setView({ screen: 'home' }) }, [])
   const signOut = () => { clearSession(); setSession(null); setQueue([]); setView({ screen: 'login' }) }
   useEffect(() => { const change = () => setPrefs(loadPreferences()); window.addEventListener('valvefin:preferences', change); return () => window.removeEventListener('valvefin:preferences', change) }, [])
-  useEffect(() => { document.documentElement.style.setProperty('--accent', prefs.accent); document.documentElement.style.setProperty('--accent-strong', prefs.accent); document.documentElement.style.setProperty('--focus', prefs.accent); void window.jellyfinDesktop?.setLaunchFullscreen(prefs.fullscreen) }, [prefs])
+  useEffect(() => { document.documentElement.style.setProperty('--accent', prefs.accent); document.documentElement.style.setProperty('--accent-strong', prefs.accent); void window.jellyfinDesktop?.setLaunchFullscreen(prefs.fullscreen) }, [prefs])
   useEffect(() => {
     const expired = () => { if (session) forgetProfile(session); setMessage('Your session expired. Please sign in again.'); clearSession(); setSession(null); setQueue([]); setView({ screen: 'login' }) }
     window.addEventListener('jellyfin:unauthorized', expired); return () => window.removeEventListener('jellyfin:unauthorized', expired)
