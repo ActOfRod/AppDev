@@ -33,6 +33,10 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   const osdRef = useRef<HTMLDivElement | null>(null)
   const openMenuRef = useRef<OpenMenu>('none')
   const osdVisibleRef = useRef(true)
+  const retried = useRef(false)
+  const mounted = useRef(true)
+  const reported = useRef<string | null>(null)
+  const pendingMetadata = useRef<(() => void) | null>(null)
 
   const [title] = useState(item.Name)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +99,15 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
   const focusOsdControl = (direction: 'left' | 'right' | 'up' | 'down') => {
     showOsd(true)
+    const slider = document.activeElement
+    if (slider instanceof HTMLInputElement && slider.type === 'range' && (direction === 'left' || direction === 'right')) {
+      const step = slider.getAttribute('aria-label') === 'Seek' ? 10 : 0.05
+      const value = Math.max(Number(slider.min), Math.min(Number(slider.max), Number(slider.value) + (direction === 'left' ? -step : step)))
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(slider, String(value))
+      slider.dispatchEvent(new Event('input', { bubbles: true }))
+      slider.dispatchEvent(new Event('change', { bubbles: true }))
+      return
+    }
     const controls = getOsdControls()
     if (controls.length === 0) return
     const active = document.activeElement
@@ -157,6 +170,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       track.mode = index != null && trackIndex === index ? 'showing' : 'hidden'
     }
     setActiveSubtitle(index)
+    if (playbackRef.current) playbackRef.current.selectedSubtitleIndex = index
   }
 
   const toggleFullscreen = async () => {
@@ -208,6 +222,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     hlsRef.current?.destroy()
     hlsRef.current = null
     video.removeAttribute('src')
+    if (pendingMetadata.current) video.removeEventListener('loadedmetadata', pendingMetadata.current)
     video.load()
 
     const startMs =
@@ -217,6 +232,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
     const startPlayback = () => {
       if (startMs > 0) video.currentTime = startMs / 1000
+      setSubtitleMode(playback.selectedSubtitleIndex)
       void video.play().catch(() => undefined)
     }
 
@@ -227,15 +243,16 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, startPlayback)
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) setError('Playback failed while streaming this title')
+        if (data.fatal) void handleMediaError()
       })
     } else {
       video.src = url
+      pendingMetadata.current = startPlayback
       video.addEventListener('loadedmetadata', startPlayback, { once: true })
     }
   }
 
-  const switchAudioTrack = async (audioStreamIndex: number) => {
+  const reloadPlayback = async (options: { audioStreamIndex?: number; subtitleStreamIndex?: number | null; forceTranscode?: boolean }) => {
     const video = videoRef.current
     if (!video) return
     const resumeAt = video.currentTime
@@ -245,30 +262,51 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
     try {
       const previous = playbackRef.current
       if (previous) {
-        await reportPlaybackStopped(session, previous, msToTicks(resumeAt * 1000))
+        await reportPlaybackStopped(session, previous, msToTicks(resumeAt * 1000)).catch(() => undefined)
       }
       const playback = await createPlaybackSession(session, item, {
         startPositionTicks: msToTicks(resumeAt * 1000),
-        audioStreamIndex,
+        audioStreamIndex: playbackRef.current?.selectedAudioIndex ?? undefined,
+        subtitleStreamIndex: playbackRef.current?.selectedSubtitleIndex,
+        ...options,
       })
+      if (!mounted.current) return
       playbackRef.current = playback
       setSubtitles(playback.subtitles)
       setAudioTracks(playback.audioTracks)
       setActiveAudio(playback.selectedAudioIndex)
-      setActiveSubtitle(null)
+      setActiveSubtitle(playback.selectedSubtitleIndex)
       attachStream(playback, resumeAt)
-      await reportPlaybackStart(session, playback)
-      window.setTimeout(() => setSubtitleMode(null), 100)
       setLoading(false)
       showOsd(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to change audio track')
+      setError(err instanceof Error ? err.message : 'Unable to change playback stream')
       setLoading(false)
     }
   }
 
+  const handleMediaError = async () => {
+    const playback = playbackRef.current
+    if (playback && playback.playMethod !== 'Transcode' && !retried.current) {
+      retried.current = true
+      await reloadPlayback({ forceTranscode: true })
+    } else setError('Playback failed. Go back and try another title or track.')
+  }
+
+  const selectSubtitle = (index: number | null) => {
+    const previous = subtitles.find((track) => track.index === activeSubtitle)
+    const next = subtitles.find((track) => track.index === index)
+    if (previous?.burnIn || next?.burnIn) void reloadPlayback({ subtitleStreamIndex: index, forceTranscode: Boolean(next?.burnIn) })
+    else setSubtitleMode(index)
+    setOpenMenu('none')
+    showOsd()
+  }
+
   useEffect(() => {
     let cancelled = false
+    const videoElement = videoRef.current
+    mounted.current = true
+    retried.current = false
 
     ;(async () => {
       setLoading(true)
@@ -280,10 +318,8 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
         setSubtitles(playback.subtitles)
         setAudioTracks(playback.audioTracks)
         setActiveAudio(playback.selectedAudioIndex)
-        setActiveSubtitle(null)
+        setActiveSubtitle(playback.selectedSubtitleIndex)
         attachStream(playback)
-        await reportPlaybackStart(session, playback)
-        window.setTimeout(() => setSubtitleMode(null), 100)
         setLoading(false)
         showOsd(true)
       } catch (err) {
@@ -296,10 +332,11 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
     return () => {
       cancelled = true
-      const video = videoRef.current
+      mounted.current = false
+      const video = videoElement
       const playback = playbackRef.current
       if (playback && video) {
-        void reportPlaybackStopped(session, playback, msToTicks(video.currentTime * 1000))
+        void reportPlaybackStopped(session, playback, msToTicks(video.currentTime * 1000)).catch(() => undefined)
       }
       hlsRef.current?.destroy()
       hlsRef.current = null
@@ -414,6 +451,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
 
     let frame = 0
     const buttonState: Record<number, boolean> = {}
+    let stickAt = 0
     const pads = navigator.getGamepads?.() ?? []
     const pad = pads.find((p) => p && p.connected)
     if (pad) {
@@ -435,6 +473,16 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
       const currentPads = navigator.getGamepads?.() ?? []
       const currentPad = currentPads.find((p) => p && p.connected)
       if (!video || !currentPad) return
+      const x = currentPad.axes[0] ?? 0
+      const y = currentPad.axes[1] ?? 0
+      if (performance.now() >= stickAt && Math.max(Math.abs(x), Math.abs(y)) > 0.55) {
+        const direction = Math.abs(x) > Math.abs(y) ? (x < 0 ? 'left' : 'right') : (y < 0 ? 'up' : 'down')
+        if (openMenuRef.current !== 'none') focusMenu(openMenuRef.current, direction === 'left' || direction === 'up' ? -1 : 1)
+        else if (osdVisibleRef.current) focusOsdControl(direction)
+        else if (direction === 'left' || direction === 'right') seekBy(direction === 'left' ? -10 : 10)
+        else { showOsd(true); getOsdControls()[0]?.focus() }
+        stickAt = performance.now() + 220
+      }
 
       if (justPressed(currentPad, 0)) {
         if (openMenuRef.current !== 'none' || osdVisibleRef.current) {
@@ -496,7 +544,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
   const sendProgress = async (isPaused: boolean) => {
     const video = videoRef.current
     const playback = playbackRef.current
-    if (!video || !playback) return
+    if (!video || !playback || reported.current !== playback.playSessionId) return
     const now = performance.now()
     if (!isPaused && now - lastProgressSent.current < 10_000) return
     lastProgressSent.current = now
@@ -531,6 +579,16 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
         <video
           ref={videoRef}
           className="player-video"
+          crossOrigin="anonymous"
+          onError={() => void handleMediaError()}
+          onPlaying={() => {
+            const playback = playbackRef.current
+            if (playback && reported.current !== playback.playSessionId) {
+              reported.current = playback.playSessionId
+              void reportPlaybackStart(session, playback).catch(() => undefined)
+            }
+            setLoading(false)
+          }}
           autoPlay
           playsInline
           onClick={(event) => {
@@ -564,7 +622,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
             onBack()
           }}
         >
-          {subtitles.map((track) => (
+          {subtitles.filter((track) => !track.burnIn).map((track) => (
             <track
               key={track.index}
               id={String(track.index)}
@@ -572,6 +630,8 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
               src={track.url}
               srcLang={track.language || 'und'}
               label={track.label}
+              default={activeSubtitle === track.index}
+              onLoad={() => setSubtitleMode(activeSubtitle)}
             />
           ))}
         </video>
@@ -613,7 +673,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
                       type="button"
                       className={activeSubtitle == null ? 'is-selected' : ''}
                       onClick={() => {
-                        setSubtitleMode(null)
+                        selectSubtitle(null)
                         setOpenMenu('none')
                         showOsd()
                       }}
@@ -629,7 +689,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
                           type="button"
                           className={activeSubtitle === track.index ? 'is-selected' : ''}
                           onClick={() => {
-                            setSubtitleMode(track.index)
+                            selectSubtitle(track.index)
                             setOpenMenu('none')
                             showOsd()
                           }}
@@ -663,7 +723,7 @@ export function PlayerScreen({ session, item, onBack }: PlayerScreenProps) {
                           type="button"
                           className={activeAudio === track.index ? 'is-selected' : ''}
                           onClick={() => {
-                            void switchAudioTrack(track.index)
+                            void reloadPlayback({ audioStreamIndex: track.index })
                           }}
                         >
                           {track.label}

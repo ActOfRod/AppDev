@@ -44,6 +44,7 @@ export type SubtitleTrack = {
   url: string
   isDefault?: boolean
   isForced?: boolean
+  burnIn?: boolean
 }
 
 export type AudioTrack = {
@@ -60,6 +61,8 @@ export type PlaybackSession = {
   streamUrl: string
   startPositionTicks: number
   isTranscoding: boolean
+  playMethod: 'DirectPlay' | 'DirectStream' | 'Transcode'
+  selectedSubtitleIndex: number | null
   subtitles: SubtitleTrack[]
   audioTracks: AudioTrack[]
   selectedAudioIndex: number | null
@@ -89,6 +92,8 @@ type MediaSource = {
   SupportsDirectStream?: boolean
   SupportsTranscoding?: boolean
   MediaStreams?: MediaStream[]
+  DefaultSubtitleStreamIndex?: number
+  DefaultAudioStreamIndex?: number
 }
 
 type PlaybackInfoResponse = {
@@ -162,6 +167,10 @@ async function jellyfinFetch<T>(
   })
 
   if (!response.ok) {
+    if (response.status === 401 && options.token) {
+      clearSession()
+      window.dispatchEvent(new CustomEvent('jellyfin:unauthorized'))
+    }
     let detail = response.statusText
     try {
       const data = (await response.json()) as { Message?: string }
@@ -319,7 +328,9 @@ export function splitLibraryViews(views: JellyfinItem[]): {
 export async function getCollectionItems(
   session: JellyfinSession,
   collectionsLibraryId?: string,
-): Promise<JellyfinItem[]> {
+  startIndex = 0,
+  limit = 48,
+): Promise<ItemPage> {
   const params = new URLSearchParams({
     IncludeItemTypes: 'BoxSet',
     Recursive: 'true',
@@ -328,11 +339,13 @@ export async function getCollectionItems(
     Fields: 'PrimaryImageAspectRatio,Overview,ProductionYear',
     ImageTypeLimit: '1',
     EnableImageTypes: 'Primary,Backdrop,Logo',
-    Limit: '48',
+    Limit: String(limit),
+    StartIndex: String(startIndex),
+    EnableTotalRecordCount: 'true',
   })
   if (collectionsLibraryId) params.set('ParentId', collectionsLibraryId)
 
-  const data = await jellyfinFetch<{ Items: JellyfinItem[] }>(
+  const data = await jellyfinFetch<ItemPage>(
     session.serverUrl,
     `/Users/${session.userId}/Items?${params}`,
     {
@@ -340,13 +353,17 @@ export async function getCollectionItems(
       token: session.accessToken,
     },
   )
-  return data.Items ?? []
+  return data
 }
+
+export type ItemPage = { Items: JellyfinItem[]; TotalRecordCount: number }
 
 export async function getLibraryItems(
   session: JellyfinSession,
   parentId: string,
-): Promise<JellyfinItem[]> {
+  startIndex = 0,
+  limit = 48,
+): Promise<ItemPage> {
   const params = new URLSearchParams({
     ParentId: parentId,
     SortBy: 'SortName',
@@ -355,10 +372,12 @@ export async function getLibraryItems(
     Fields: 'PrimaryImageAspectRatio,Overview,ProductionYear,BasicSyncInfo',
     ImageTypeLimit: '1',
     EnableImageTypes: 'Primary,Backdrop,Logo',
-    Limit: '100',
+    Limit: String(limit),
+    StartIndex: String(startIndex),
+    EnableTotalRecordCount: 'true',
   })
 
-  const data = await jellyfinFetch<{ Items: JellyfinItem[] }>(
+  const data = await jellyfinFetch<ItemPage>(
     session.serverUrl,
     `/Users/${session.userId}/Items?${params}`,
     {
@@ -366,7 +385,7 @@ export async function getLibraryItems(
       token: session.accessToken,
     },
   )
-  return data.Items ?? []
+  return data
 }
 
 export function itemImageUrl(
@@ -462,22 +481,28 @@ export async function getEpisodes(
 }
 
 /** Chromium / Electron-friendly profile so Jellyfin can direct-play or transcode to mp4/hls. */
-function chromiumDeviceProfile() {
+export function chromiumDeviceProfile() {
+  const video = document.createElement('video')
+  const supports = (mime: string) => Boolean(video.canPlayType(mime)) ||
+    (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(mime))
+  const videoCodecs = Object.entries({ h264: 'avc1.640028', hevc: 'hvc1.1.6.L93.B0', av1: 'av01.0.08M.08', vp9: 'vp09.00.10.08', vp8: 'vp8' })
+    .filter(([, codec]) => supports(`video/${codec.startsWith('vp') ? 'webm' : 'mp4'}; codecs="${codec}"`)).map(([name]) => name).join(',')
+  const audioCodecs = Object.entries({ aac: 'mp4a.40.2', ac3: 'ac-3', eac3: 'ec-3', dts: 'dtsc', opus: 'opus', flac: 'flac', mp3: 'mp3', vorbis: 'vorbis' })
+    .filter(([, codec]) => supports(`audio/${['opus', 'vorbis'].includes(codec) ? 'ogg' : 'mp4'}; codecs="${codec}"`)).map(([name]) => name).join(',')
   return {
     Name: 'ValveFin Chromium',
     MaxStreamingBitrate: 120_000_000,
     MaxStaticBitrate: 120_000_000,
     DirectPlayProfiles: [
-      { Type: 'Video', Container: 'mp4,m4v,mov,webm,mkv', VideoCodec: 'h264,hevc,vp8,vp9,av1', AudioCodec: 'aac,mp3,opus,flac,vorbis' },
-      { Type: 'Audio', Container: 'mp3,aac,m4a,flac,opus,ogg,wav', AudioCodec: 'mp3,aac,flac,opus,vorbis' },
+      { Type: 'Video', Container: 'mp4,m4v,mov,webm', VideoCodec: videoCodecs || 'unsupported', AudioCodec: audioCodecs || 'unsupported' },
     ],
     TranscodingProfiles: [
       {
         Type: 'Video',
-        Container: 'mp4',
+        Container: 'ts',
         VideoCodec: 'h264',
         AudioCodec: 'aac',
-        Protocol: 'http',
+        Protocol: 'hls',
         Context: 'Streaming',
         MaxAudioChannels: '6',
       },
@@ -496,6 +521,8 @@ function chromiumDeviceProfile() {
     SubtitleProfiles: [
       { Format: 'vtt', Method: 'External' },
       { Format: 'srt', Method: 'External' },
+      { Format: 'pgssub', Method: 'Encode' },
+      { Format: 'dvdsub', Method: 'Encode' },
     ],
   }
 }
@@ -536,10 +563,7 @@ function subtitleStreamUrl(
   mediaSourceId: string,
   stream: MediaStream,
 ): string {
-  if (stream.DeliveryUrl && !/^[a-zA-Z]:\\/.test(stream.DeliveryUrl) && !stream.DeliveryUrl.startsWith('/')) {
-    // Ignore Windows filesystem paths returned for some external subs
-  }
-  if (stream.DeliveryUrl?.startsWith('/')) {
+  if (stream.DeliveryUrl?.startsWith('/') && /\.vtt(?:\?|$)/i.test(stream.DeliveryUrl)) {
     return withApiKey(session, absoluteMediaUrl(session, stream.DeliveryUrl))
   }
   return withApiKey(
@@ -554,7 +578,7 @@ function collectSubtitles(
   source: MediaSource,
 ): SubtitleTrack[] {
   return (source.MediaStreams ?? [])
-    .filter(isTextSubtitle)
+    .filter((stream) => stream.Type === 'Subtitle')
     .map((stream) => ({
       index: stream.Index,
       label: stream.DisplayTitle || stream.Language || `Subtitle ${stream.Index}`,
@@ -562,6 +586,7 @@ function collectSubtitles(
       url: subtitleStreamUrl(session, itemId, source.Id, stream),
       isDefault: stream.IsDefault,
       isForced: stream.IsForced,
+      burnIn: !isTextSubtitle(stream),
     }))
 }
 
@@ -625,39 +650,30 @@ function buildStreamUrl(
   itemId: string,
   source: MediaSource,
   audioStreamIndex: number | null,
-): { streamUrl: string; isTranscoding: boolean } {
+  forceTranscode = false,
+): { streamUrl: string; isTranscoding: boolean; playMethod: PlaybackSession['playMethod'] } {
   let streamUrl: string | null = null
   let isTranscoding = false
 
-  if (source.TranscodingUrl) {
-    streamUrl = withApiKey(session, absoluteMediaUrl(session, source.TranscodingUrl))
-    isTranscoding = true
-  } else if (source.DirectStreamUrl) {
+  if (!forceTranscode && source.SupportsDirectPlay) {
+    const params = new URLSearchParams({ Static: 'true', MediaSourceId: source.Id, api_key: session.accessToken, DeviceId: session.deviceId })
+    return { streamUrl: `${session.serverUrl}/Videos/${itemId}/stream.${source.Container || 'mp4'}?${params}`, isTranscoding: false, playMethod: 'DirectPlay' }
+  } else if (!forceTranscode && source.SupportsDirectStream && source.DirectStreamUrl) {
     streamUrl = withApiKey(session, absoluteMediaUrl(session, source.DirectStreamUrl))
+  } else if (source.TranscodingUrl) {
+    streamUrl = withApiKey(session, absoluteMediaUrl(session, source.TranscodingUrl))
+    isTranscoding = forceTranscode || !source.SupportsDirectStream
   } else {
-    const params = new URLSearchParams({
-      Static: 'true',
-      mediaSourceId: source.Id,
-      deviceId: session.deviceId,
-      api_key: session.accessToken,
-      Tag: source.Id,
-    })
-    if (audioStreamIndex != null) {
-      params.set('AudioStreamIndex', String(audioStreamIndex))
-    }
-    const container = source.Container ? `.${source.Container.split(',')[0]}` : ''
-    streamUrl = `${session.serverUrl}/Videos/${itemId}/stream${container}?${params}`
+    throw new Error('Server did not provide a compatible playback URL')
   }
 
   if (audioStreamIndex != null) {
     const parsed = new URL(streamUrl)
-    if (!parsed.searchParams.has('AudioStreamIndex')) {
-      parsed.searchParams.set('AudioStreamIndex', String(audioStreamIndex))
-      streamUrl = parsed.toString()
-    }
+    parsed.searchParams.set('AudioStreamIndex', String(audioStreamIndex))
+    streamUrl = parsed.toString()
   }
 
-  return { streamUrl, isTranscoding }
+  return { streamUrl, isTranscoding, playMethod: isTranscoding ? 'Transcode' : 'DirectStream' }
 }
 
 async function requestPlaybackInfo(
@@ -666,11 +682,16 @@ async function requestPlaybackInfo(
   options: {
     startPositionTicks: number
     audioStreamIndex?: number | null
+    forceTranscode?: boolean
+    subtitleStreamIndex?: number | null
   },
 ): Promise<PlaybackInfoResponse> {
+  const params = new URLSearchParams({ UserId: session.userId, StartTimeTicks: String(options.startPositionTicks), EnableDirectPlay: String(!options.forceTranscode), EnableDirectStream: String(!options.forceTranscode) })
+  if (options.audioStreamIndex != null) params.set('AudioStreamIndex', String(options.audioStreamIndex))
+  if (options.subtitleStreamIndex != null) params.set('SubtitleStreamIndex', String(options.subtitleStreamIndex))
   return jellyfinFetch<PlaybackInfoResponse>(
     session.serverUrl,
-    `/Items/${itemId}/PlaybackInfo?UserId=${session.userId}`,
+    `/Items/${itemId}/PlaybackInfo?${params}`,
     {
       method: 'POST',
       deviceId: session.deviceId,
@@ -679,10 +700,12 @@ async function requestPlaybackInfo(
         UserId: session.userId,
         StartTimeTicks: options.startPositionTicks,
         AutoOpenLiveStream: true,
-        EnableDirectPlay: true,
-        EnableDirectStream: true,
+        EnableDirectPlay: !options.forceTranscode,
+        EnableDirectStream: !options.forceTranscode,
         EnableTranscoding: true,
+        AllowVideoStreamCopy: !options.forceTranscode,
         DeviceProfile: chromiumDeviceProfile(),
+        ...(options.subtitleStreamIndex != null ? { SubtitleStreamIndex: options.subtitleStreamIndex } : {}),
         ...(options.audioStreamIndex != null
           ? { AudioStreamIndex: options.audioStreamIndex }
           : {}),
@@ -694,8 +717,9 @@ async function requestPlaybackInfo(
 export async function createPlaybackSession(
   session: JellyfinSession,
   item: JellyfinItem,
-  options?: { startPositionTicks?: number; audioStreamIndex?: number | null },
+  options?: { startPositionTicks?: number; audioStreamIndex?: number | null; subtitleStreamIndex?: number | null; forceTranscode?: boolean },
 ): Promise<PlaybackSession> {
+  item = await getItem(session, item.Id)
   const startPositionTicks =
     options?.startPositionTicks ?? item.UserData?.PlaybackPositionTicks ?? 0
 
@@ -710,21 +734,30 @@ export async function createPlaybackSession(
     options?.audioStreamIndex !== undefined
       ? options.audioStreamIndex
       : pickPreferredAudioIndex(probeSource.MediaStreams ?? [])
+  const subtitle = options?.subtitleStreamIndex !== undefined
+    ? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.Index === options.subtitleStreamIndex)
+    : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.IsForced) ?? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && (s.Index === probeSource.DefaultSubtitleStreamIndex || s.IsDefault))
+  const defaultAudioIndex = probeSource.DefaultAudioStreamIndex ?? probeSource.MediaStreams?.find((s) => s.Type === 'Audio' && s.IsDefault)?.Index
+  const forceTranscode = Boolean(options?.forceTranscode || options?.audioStreamIndex !== undefined ||
+    (selectedAudioIndex != null && defaultAudioIndex != null && selectedAudioIndex !== defaultAudioIndex) || (subtitle && !isTextSubtitle(subtitle)))
 
   const info =
-    selectedAudioIndex != null
+    selectedAudioIndex != null || forceTranscode || subtitle
       ? await requestPlaybackInfo(session, item.Id, {
           startPositionTicks,
           audioStreamIndex: selectedAudioIndex,
+          forceTranscode,
+          subtitleStreamIndex: subtitle?.Index ?? -1,
         })
       : probe
 
   const source = info.MediaSources?.[0] ?? probeSource
-  const { streamUrl, isTranscoding } = buildStreamUrl(
+  const { streamUrl, isTranscoding, playMethod } = buildStreamUrl(
     session,
     item.Id,
     source,
     selectedAudioIndex,
+    forceTranscode,
   )
 
   return {
@@ -734,6 +767,8 @@ export async function createPlaybackSession(
     streamUrl,
     startPositionTicks,
     isTranscoding,
+    playMethod,
+    selectedSubtitleIndex: subtitle?.Index ?? null,
     subtitles: collectSubtitles(session, item.Id, source),
     audioTracks: audioTracks.length > 0 ? audioTracks : collectAudioTracks(source),
     selectedAudioIndex,
@@ -756,7 +791,7 @@ export async function reportPlaybackStart(
       IsPaused: false,
       IsMuted: false,
       PositionTicks: playback.startPositionTicks,
-      PlayMethod: playback.isTranscoding ? 'Transcode' : 'DirectStream',
+      PlayMethod: playback.playMethod,
     },
   })
 }
@@ -779,7 +814,7 @@ export async function reportPlaybackProgress(
       IsPaused: isPaused,
       IsMuted: false,
       PositionTicks: positionTicks,
-      PlayMethod: playback.isTranscoding ? 'Transcode' : 'DirectStream',
+      PlayMethod: playback.playMethod,
     },
   })
 }

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { focusFirstFocusable, useControllerNavigation } from './hooks/useControllerNavigation'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useControllerNavigation } from './hooks/useControllerNavigation'
+import { usePagedItems } from './hooks/usePagedItems'
+import { useScreenMemory } from './hooks/useScreenMemory'
 import {
   authenticate,
   clearSession,
@@ -8,7 +10,6 @@ import {
   getLibraryItems,
   getResumeItems,
   getViews,
-  isPlayableItem,
   itemImageUrl,
   loadSession,
   splitLibraryViews,
@@ -27,6 +28,7 @@ type ViewState =
   | { screen: 'player'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
 
 function App() {
+  const [loginMessage, setLoginMessage] = useState<string | null>(null)
   const [session, setSession] = useState<JellyfinSession | null>(() => loadSession())
   const [view, setView] = useState<ViewState>(() =>
     loadSession() ? { screen: 'home' } : { screen: 'login' },
@@ -35,18 +37,18 @@ function App() {
   useControllerNavigation(view.screen !== 'login' && view.screen !== 'player')
 
   useEffect(() => {
-    if (view.screen === 'login' || view.screen === 'player') return
-    const id = window.setTimeout(() => {
-      focusFirstFocusable()
-    }, 0)
-    return () => window.clearTimeout(id)
-  }, [view.screen])
+    const expired = () => {
+      setLoginMessage('Your session expired. Please sign in again.')
+      setSession(null)
+      setView({ screen: 'login' })
+    }
+    window.addEventListener('jellyfin:unauthorized', expired)
+    return () => window.removeEventListener('jellyfin:unauthorized', expired)
+  }, [])
 
   useEffect(() => {
     const onBack = () => {
-      if (view.screen === 'player') {
-        setView(view.returnTo)
-      } else if (view.screen === 'detail') {
+      if (view.screen === 'detail') {
         setView(view.returnTo)
       } else if (view.screen === 'library') {
         setView({ screen: 'home' })
@@ -66,16 +68,13 @@ function App() {
     item: JellyfinItem,
     returnTo: Exclude<ViewState, { screen: 'login' | 'player' }>,
   ) => {
-    if (isPlayableItem(item)) {
-      setView({ screen: 'player', item, returnTo })
-      return
-    }
     setView({ screen: 'detail', item, returnTo })
   }
 
   if (!session || view.screen === 'login') {
     return (
       <LoginScreen
+        message={loginMessage}
         onSuccess={(next) => {
           setSession(next)
           setView({ screen: 'home' })
@@ -97,6 +96,7 @@ function App() {
   if (view.screen === 'detail') {
     return (
       <DetailScreen
+        key={view.item.Id}
         session={session}
         item={view.item}
         onBack={() => setView(view.returnTo)}
@@ -129,7 +129,7 @@ function App() {
   )
 }
 
-function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => void }) {
+function LoginScreen({ onSuccess, message }: { onSuccess: (session: JellyfinSession) => void; message: string | null }) {
   const [serverUrl, setServerUrl] = useState(
     () => localStorage.getItem('jellyfin.livingroom.serverUrl') ?? '',
   )
@@ -193,7 +193,7 @@ function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => v
           />
         </label>
 
-        {error ? <p className="error">{error}</p> : null}
+        {error || message ? <p className="error">{error || message}</p> : null}
 
         <button type="submit" className="primary" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
@@ -214,8 +214,9 @@ function HomeScreen({
   onOpenItem: (item: JellyfinItem) => void
   onSignOut: () => void
 }) {
+  useScreenMemory('home')
   const [mediaLibraries, setMediaLibraries] = useState<JellyfinItem[]>([])
-  const [collections, setCollections] = useState<JellyfinItem[]>([])
+  const collections = usePagedItems(useCallback((offset: number) => getCollectionItems(session, undefined, offset), [session]), `${session.userId}:collections`)
   const [resume, setResume] = useState<JellyfinItem[]>([])
   const [latestMovies, setLatestMovies] = useState<JellyfinItem[]>([])
   const [latestShows, setLatestShows] = useState<JellyfinItem[]>([])
@@ -228,23 +229,20 @@ function HomeScreen({
       setLoading(true)
       setError(null)
       try {
-        const [nextViews, nextResume, nextMovies, nextShows] = await Promise.all([
-          getViews(session),
-          getResumeItems(session),
-          getLatestItems(session, { includeItemTypes: 'Movie', limit: 24 }),
-          getLatestItems(session, { includeItemTypes: 'Series', limit: 24 }),
+        const row = async (request: Promise<JellyfinItem[]>, apply: (items: JellyfinItem[]) => void) => {
+          try {
+            const items = await request
+            if (!cancelled) apply(items)
+          } catch (err) {
+            if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load a home row')
+          }
+        }
+        await Promise.all([
+          row(getViews(session), (views) => setMediaLibraries(splitLibraryViews(views).mediaLibraries)),
+          row(getResumeItems(session), setResume),
+          row(getLatestItems(session, { includeItemTypes: 'Movie', limit: 24 }), setLatestMovies),
+          row(getLatestItems(session, { includeItemTypes: 'Series', limit: 24 }), setLatestShows),
         ])
-        if (cancelled) return
-
-        const { mediaLibraries: libraries, collectionsLibrary } = splitLibraryViews(nextViews)
-        const nextCollections = await getCollectionItems(session, collectionsLibrary?.Id)
-
-        if (cancelled) return
-        setMediaLibraries(libraries)
-        setCollections(nextCollections)
-        setResume(nextResume)
-        setLatestMovies(nextMovies)
-        setLatestShows(nextShows)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load home')
@@ -291,13 +289,16 @@ function HomeScreen({
         </div>
       </section>
 
-      {collections.length > 0 ? (
+      {collections.items.length > 0 || collections.error ? (
         <section className="section">
           <div className="section-heading">
-            <h2>Collections</h2>
+            <h2>Collections ({collections.total})</h2>
           </div>
-          <div className="rail poster-rail">
-            {collections.map((item) => (
+          <div className="rail poster-rail" onFocusCapture={(event) => {
+            const index = collections.items.findIndex((item) => item.Id === (event.target as HTMLElement).dataset.focusKey)
+            if (index >= collections.items.length - 6 && index >= 0 && !collections.error) void collections.more()
+          }}>
+            {collections.items.map((item) => (
               <PosterCard
                 key={item.Id}
                 session={session}
@@ -306,7 +307,9 @@ function HomeScreen({
                 onSelect={() => onOpenLibrary(item)}
               />
             ))}
+            {collections.hasMore || collections.error ? <button ref={collections.sentinel} className="ghost" onFocus={() => { if (!collections.error) void collections.more() }} onClick={() => void collections.more()}>Load more collections</button> : null}
           </div>
+          {collections.error ? <p className="error">{collections.error}</p> : null}
         </section>
       ) : null}
 
@@ -386,30 +389,8 @@ function LibraryScreen({
   onSignOut: () => void
   onOpenItem: (item: JellyfinItem) => void
 }) {
-  const [items, setItems] = useState<JellyfinItem[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const next = await getLibraryItems(session, library.Id)
-        if (!cancelled) setItems(next)
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load library')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [session, library.Id])
+  useScreenMemory(`library:${library.Id}`)
+  const { items, total, error, loading, hasMore, more, sentinel } = usePagedItems(useCallback((offset: number) => getLibraryItems(session, library.Id, offset), [session, library.Id]), `${session.userId}:${library.Id}`)
 
   const backdrop = useMemo(
     () => itemImageUrl(session, library, { type: 'Backdrop', maxWidth: 1920 }),
@@ -429,7 +410,7 @@ function LibraryScreen({
                 ← Back
               </button>
               <p className="brand">ValveFin</p>
-              <h1>{library.Name}</h1>
+              <h1>{library.Name} ({total})</h1>
             </div>
             <div className="topbar-actions">
               <button type="button" className="ghost" onClick={onSignOut}>
@@ -444,7 +425,10 @@ function LibraryScreen({
       {loading ? <p className="muted banner">Loading titles…</p> : null}
 
       <section className="section">
-        <div className="poster-grid">
+        <div className="poster-grid" onFocusCapture={(event) => {
+          const index = items.findIndex((item) => item.Id === (event.target as HTMLElement).dataset.focusKey)
+          if (index >= items.length - 8 && index >= 0 && !error) void more()
+        }}>
           {items.map((item) => (
             <PosterCard
               key={item.Id}
@@ -455,6 +439,8 @@ function LibraryScreen({
             />
           ))}
         </div>
+        {hasMore || error ? <button ref={sentinel} className="ghost" onFocus={() => { if (!error) void more() }} onClick={() => void more()}>Load more titles</button> : null}
+        {!loading && !error && total === 0 ? <p className="muted">No titles in this library.</p> : null}
       </section>
     </div>
   )
@@ -486,6 +472,7 @@ function PosterCard({
       onClick={onSelect}
       autoFocus={autoFocus}
       aria-label={item.Name}
+      data-focus-key={item.Id}
     >
       <div className="poster-art" style={image ? { backgroundImage: `url(${image})` } : undefined}>
         {!image ? <span>{item.Name.slice(0, 1)}</span> : null}
@@ -521,6 +508,7 @@ function MediaLibraryCard({
       onClick={onSelect}
       autoFocus={autoFocus}
       aria-label={item.Name}
+      data-focus-key={item.Id}
     >
       <span className="media-card-icon" aria-hidden="true">
         {libraryIcon(item)}

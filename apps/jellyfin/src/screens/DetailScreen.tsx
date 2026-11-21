@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useScreenMemory } from '../hooks/useScreenMemory'
 import {
   formatRuntime,
   getEpisodes,
@@ -29,6 +30,7 @@ export function DetailScreen({
   onPlay,
   onSignOut,
 }: DetailScreenProps) {
+  useScreenMemory(`detail:${initialItem.Id}`)
   const [item, setItem] = useState(initialItem)
   const [children, setChildren] = useState<JellyfinItem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -129,7 +131,7 @@ export function DetailScreen({
 
               <div className="detail-actions">
                 {playable ? (
-                  <button type="button" className="primary" onClick={() => onPlay(item)}>
+                  <button data-focus-key="play" type="button" className="primary" onClick={() => onPlay(item)}>
                     {item.UserData?.PlaybackPositionTicks ? 'Resume' : 'Play'}
                   </button>
                 ) : null}
@@ -157,7 +159,8 @@ export function DetailScreen({
                   key={child.Id}
                   type="button"
                   className="episode-row"
-                  onClick={() => onPlay(child)}
+                  onClick={() => onOpenItem(child)}
+                  data-focus-key={child.Id}
                 >
                   <div
                     className="episode-thumb"
@@ -182,6 +185,7 @@ export function DetailScreen({
                   key={child.Id}
                   type="button"
                   className="poster-card"
+                  data-focus-key={child.Id}
                   onClick={() => onOpenItem(child)}
                 >
                   <div
