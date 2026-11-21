@@ -53,7 +53,7 @@ await wait(`/h264/i.test(document.querySelector('.media-info')?.textContent)`)
 console.log('PASS movie details settles without lingering Loading; full-bleed backdrop, logo, badges, ends-at and media panel')
 }
 if (run(1)) {
-await wait(`document.querySelectorAll('.section .poster-card').length>0`)
+await wait(`document.querySelectorAll('.section .person-card').length>0`)
 await click('.section .person-card', 'Valve Test Performer')
 await wait(`document.body.textContent.includes('Filmography') && document.querySelector('.section [aria-label="Valve Test AVC"]')`)
 await shot('person')
