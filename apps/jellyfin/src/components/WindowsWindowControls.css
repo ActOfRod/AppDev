@@ -1,0 +1,11 @@
+.windows-window-controls { position: fixed; inset: 0 0 auto; height: 36px; z-index: 1000; display: flex; align-items: center; background: var(--bg-deep); color: var(--text); -webkit-app-region: drag; }
+.windows-window-controls > span { flex: 1; padding-left: 1rem; font-size: 0.8rem; }
+.windows-window-controls > button { width: 46px; height: 36px; padding: 8px 15px; border: 0; border-radius: 0; color: inherit; background: transparent; -webkit-app-region: no-drag; }
+.windows-window-controls > button:hover { background: var(--bg-elevated); }
+.windows-window-controls > button:last-child:hover { background: #c42b1c; color: white; }
+.windows-window-controls svg { width: 16px; height: 16px; display: block; }
+html.windows-windowed body { padding-top: 36px; }
+html.windows-windowed :is(.nav-rail, .live-player, .modal-shade, .screensaver) { top: 36px; }
+html.windows-windowed .global-error { top: calc(36px + 1rem); }
+html.windows-windowed :is(.player-shell, .player-stage) { min-height: calc(100vh - 36px); }
+html.windows-windowed .player-video { height: calc(100vh - 36px); }

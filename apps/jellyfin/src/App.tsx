@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useControllerNavigation } from './hooks/useControllerNavigation'
 import { useScreenMemory } from './hooks/useScreenMemory'
-import { clearSession, getItem, getNextUp, getViews, loadSession, type JellyfinItem, type JellyfinSession } from './lib/jellyfin'
+import { clearSession, getItem, getNextUp, getViews, loadSession, type JellyfinItem, type JellyfinSession, type PlaybackOptions } from './lib/jellyfin'
 import { forgetProfile, queryItems, rememberProfile, setFavorite, setPlayed } from './lib/catalog'
 import { loadPreferences } from './lib/preferences'
 import { HomeScreen } from './screens/HomeScreen'
@@ -21,7 +21,7 @@ import './styles.css'
 import './liveTv.css'
 
 type BrowseView = { screen: 'home' | 'search' | 'favorites' | 'settings' | 'music' } | { screen: 'library'; library: JellyfinItem; returnTo?: BrowseView } | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
-type View = BrowseView | { screen: 'live'; item: LiveItem; channels: LiveItem[]; returnTo: BrowseView } | { screen: 'login' } | { screen: 'prompt'; item: JellyfinItem; returnTo: BrowseView } | { screen: 'player'; item: JellyfinItem; start?: number; source?: string; returnTo: BrowseView }
+type View = BrowseView | { screen: 'live'; item: LiveItem; channels: LiveItem[]; returnTo: BrowseView } | { screen: 'login' } | { screen: 'player'; item: JellyfinItem; start?: number; source?: string; tracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>; returnTo: BrowseView }
 
 export default function App() {
   const [session, setSession] = useState(loadSession)
@@ -54,7 +54,7 @@ export default function App() {
     const back = () => {
       if (context) { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()); return }
       if (document.querySelector('.live-screen [data-modal]')) return
-      if (view.screen === 'detail' || view.screen === 'prompt') setView(view.returnTo)
+      if (view.screen === 'detail') setView(view.returnTo)
       else if (view.screen === 'library' && view.returnTo) setView(view.returnTo)
       else if (view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login') setView({ screen: 'home' })
     }
@@ -66,9 +66,9 @@ export default function App() {
     window.addEventListener('jellyfin:back', back); window.addEventListener('valvefin:context', actions)
     return () => { window.removeEventListener('jellyfin:back', back); window.removeEventListener('valvefin:context', actions) }
   }, [view, context, session])
-  const browse: BrowseView = ['player', 'live', 'prompt', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
+  const browse: BrowseView = ['player', 'live', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
   const open = (item: JellyfinItem) => setView(item.Type === 'BoxSet' || item.Type === 'CollectionFolder' ? { screen: 'library', library: item, returnTo: browse } : { screen: 'detail', item, returnTo: browse })
-  const play = async (item: JellyfinItem, start?: number, source?: string) => {
+  const play = async (item: JellyfinItem, start?: number, source?: string, tracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>) => {
     if (!session) return
     setContext(null)
     setMessage('')
@@ -80,21 +80,20 @@ export default function App() {
     } else if (item.Type === 'Series') {
       try { const next = await getNextUp(session, item.Id); if (!next) throw Error('No episodes available'); setView({ screen: 'player', item: next, returnTo: browse }) }
       catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to play series') }
-    } else if (['Movie', 'Episode', 'Video', 'Trailer', 'MusicVideo', 'Recording'].includes(item.Type)) setView({ screen: 'player', item, start, source, returnTo: browse })
+    } else if (['Movie', 'Episode', 'Video', 'Trailer', 'MusicVideo', 'Recording'].includes(item.Type)) setView({ screen: 'player', item, start, source, tracks, returnTo: browse })
     else open(item)
   }
   let content
   if (!session || view.screen === 'login') content = <AccountScreen success={success} message={message} />
-  else if (view.screen === 'player') content = <PlayerScreen key={view.item.Id} session={session} item={view.item} startPositionTicks={view.start} mediaSourceId={view.source} onNext={(item) => setView({ ...view, item, start: 0, source: undefined })} onBack={() => setView(view.returnTo)} />
-  else if (view.screen === 'prompt') content = <section className="resume-prompt app-shell" role="dialog" data-modal aria-label="Resume playback"><p className="brand">Continue Watching</p><h1>{view.item.Name}</h1><div className="toolbar"><button className="primary" autoFocus onClick={() => setView({ ...view, screen: 'player' })}>Resume</button><button className="ghost" onClick={() => setView({ ...view, screen: 'player', start: 0 })}>Start over</button><button className="ghost" onClick={() => setView(view.returnTo)}>Cancel</button></div></section>
-  else if (view.screen === 'detail') content = <DetailScreen key={view.item.Id} session={session} item={view.item} onBack={() => setView(view.returnTo)} onOpenItem={open} onPlay={(i, start, source) => void play(i, start, source)} onSignOut={signOut} />
+  else if (view.screen === 'player') content = <PlayerScreen key={view.item.Id} session={session} item={view.item} startPositionTicks={view.start} mediaSourceId={view.source} initialTracks={view.tracks} onNext={(item) => setView({ ...view, item, start: 0, source: undefined, tracks: undefined })} onBack={() => setView(view.returnTo)} />
+  else if (view.screen === 'detail') content = <DetailScreen key={view.item.Id} session={session} item={view.item} onBack={() => setView(view.returnTo)} onOpenItem={open} onPlay={(i, start, source, tracks) => void play(i, start, source, tracks)} onSignOut={signOut} />
   else if (view.screen === 'live') content = <LivePlayerScreen key={view.item.Id} session={session} channel={view.item} all={view.channels} change={(item) => setView({ ...view, item })} back={() => setView(view.returnTo)} />
   else if (view.screen === 'library') content = view.library.CollectionType?.toLowerCase() === 'livetv' ? <LiveTvScreen session={session} play={(item, all) => setView({ screen: 'live', item, channels: all, returnTo: view })} recording={(item) => void play(item)} /> : <LibraryScreen key={view.library.Id} session={session} library={view.library} open={open} />
   else if (view.screen === 'search') content = <SearchScreen session={session} open={open} />
   else if (view.screen === 'settings') content = <SettingsScreen switchAccount={signOut} libraries={libraries} />
   else if (view.screen === 'music') content = <MusicScreen session={session} open={open} play={setQueue} />
   else if (view.screen === 'favorites') content = <FavoritesScreen session={session} open={open} />
-  else content = <HomeScreen session={session} open={open} play={(i) => void play(i)} resume={(item) => setView({ screen: 'prompt', item, returnTo: { screen: 'home' } })} />
+  else content = <HomeScreen session={session} open={open} play={(i) => void play(i)} resume={open} />
   const navigationLibraries = libraries.filter((library) => library.CollectionType !== 'music')
   return <><div className={session && view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login' ? 'browse-layout' : ''}>{session && view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login' && <nav className="nav-rail" aria-label="Main navigation"><p className="brand">ValveFin</p>{(['home', 'search', 'favorites', 'music', 'settings'] as const).map((screen) => <button key={screen} className={view.screen === screen ? 'primary' : 'ghost'} onClick={() => setView({ screen })}>{screen[0].toUpperCase() + screen.slice(1)}</button>)}{navigationLibraries.length > 0 && <p className="nav-section-label">Libraries</p>}{navigationLibraries.map((library) => <button className={view.screen === 'library' && view.library.Id === library.Id ? 'primary' : 'ghost'} key={library.Id} onClick={() => setView({ screen: 'library', library })}>{library.Name}</button>)}<small>{session.userName} · Start: navigation</small></nav>}{content}</div>
     {session && message && !context && <aside className="global-error" role="alert"><p>{message}</p><button className="ghost" onClick={() => setMessage('')}>Dismiss</button></aside>}

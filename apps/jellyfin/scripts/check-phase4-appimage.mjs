@@ -10,7 +10,7 @@ const state = path.join(home, '.local/share/valvefin-phase4-smoke')
 const shots = path.join(home, 'shots/phase4')
 await mkdir(state, { recursive: true })
 await mkdir(shots, { recursive: true })
-const image = path.resolve(process.argv[2] ?? 'release/ValveFin-0.2.1-x86_64.AppImage')
+const image = path.resolve(process.argv[2] ?? 'release/ValveFin-0.2.2-x86_64.AppImage')
 const req = `process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')`
 const app = `${req}.app`
 const win = `${req}.BrowserWindow.getAllWindows()[0]`
@@ -86,10 +86,10 @@ async function launch(gameMode) {
       await renderer.evaluate(`${selector}.click()`)
     }
     assert.equal(await main.evaluate(`${app}.isPackaged`), true)
-    assert.equal(await main.evaluate(`${app}.getVersion()`), '0.2.1')
+    assert.equal(await main.evaluate(`${app}.getVersion()`), '0.2.2')
     assert.ok(await main.evaluate(`Boolean(process.env.APPIMAGE) && ${app}.commandLine.hasSwitch('no-sandbox')`))
     assert.ok((await main.evaluate(`${app}.commandLine.getSwitchValue('enable-features')`)).includes('AcceleratedVideoDecodeLinuxGL'))
-    console.log('PASS packaged main: version 0.2.1, AppImage-only sandbox flag and Linux VA-API flags')
+    console.log('PASS packaged main: version 0.2.2, AppImage-only sandbox flag and Linux VA-API flags')
     await wait(`document.querySelector('button')`)
     assert.match(await renderer.evaluate('location.href'), /^file:.*app\.asar\/dist\/index\.html$/)
     assert.equal(await renderer.evaluate(`window.jellyfinDesktop.platform`), 'linux')
@@ -112,10 +112,10 @@ async function launch(gameMode) {
     }
     await wait(`document.querySelector('.featured .title-logo')?.naturalWidth>0 && document.querySelectorAll('.nav-rail button').length>=6`)
     if (!gameMode) {
-      assert.ok(renderer.authenticationHeader().includes('Version="0.2.1"'))
+      assert.ok(renderer.authenticationHeader().includes('Version="0.2.2"'))
       await renderer.evaluate(`window.packagedPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.packagedPad]`)
       await click('Settings')
-      await wait(`document.body.textContent.includes('ValveFin 0.2.1')`)
+      await wait(`document.body.textContent.includes('ValveFin 0.2.2')`)
       if (await renderer.evaluate(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Launch fullscreen: On')`)) await click('Launch fullscreen: On')
       await wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Launch fullscreen: Off')`)
       await renderer.evaluate('window.packagedPad.buttons[9].pressed=true')
@@ -128,7 +128,7 @@ async function launch(gameMode) {
       await writeFile(path.join(shots, 'appimage.png'), Buffer.from(screenshot.data, 'base64'))
       await main.evaluate(`${win}.setFullScreen(false)`)
       await renderer.evaluate('window.jellyfinDesktop.setLaunchFullscreen(false)')
-      console.log('PASS actual AppImage 0.2.1 loads ASAR/file assets, real UI login to local Jellyfin, preload, secure Gamepad API, simulated Start/A navigation, About and Jellyfin client versions')
+      console.log('PASS actual AppImage 0.2.2 loads ASAR/file assets, real UI login to local Jellyfin, preload, secure Gamepad API, simulated Start/A navigation, About and Jellyfin client versions')
       console.log(`SCREENSHOT ${shots}/appimage.png`)
     } else {
       const stateFile = await main.evaluate(`${app}.getPath('userData')+'/desktop-state.json'`)

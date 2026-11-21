@@ -1,10 +1,15 @@
-import { app, BrowserWindow, ipcMain, powerSaveBlocker, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell } from 'electron'
 import path from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
 
 for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
+if (process.platform === 'win32') {
+  const features = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
+  features.add('CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('disable-features', [...features].join(','))
+}
 
 if (process.platform === 'linux') {
   if (process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox')
@@ -21,6 +26,26 @@ process.env.VITE_PUBLIC = app.isPackaged
   : path.join(process.env.DIST, '../public')
 
 let mainWindow: BrowserWindow | null = null
+let borderlessFullscreen = false
+let windowedBounds: Electron.Rectangle | undefined
+let windowedMaximized = false
+function isWindowFullscreen() { return process.platform === 'win32' ? borderlessFullscreen : mainWindow?.isFullScreen() ?? false }
+function setWindowFullscreen(enabled: boolean) {
+  if (!mainWindow) return
+  if (process.platform !== 'win32') { mainWindow.setFullScreen(enabled); return }
+  if (enabled === borderlessFullscreen) return
+  if (enabled) {
+    windowedMaximized = mainWindow.isMaximized()
+    windowedBounds = windowedMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()
+    if (windowedMaximized) mainWindow.unmaximize()
+    mainWindow.setBounds(screen.getDisplayMatching(windowedBounds).bounds)
+  } else if (windowedBounds) {
+    mainWindow.setBounds(windowedBounds)
+    if (windowedMaximized) mainWindow.maximize()
+  }
+  borderlessFullscreen = enabled
+  mainWindow.webContents.send('window:fullscreen-changed', enabled)
+}
 type DesktopState = { fullscreen?: boolean; bounds?: { x?: number; y?: number; width: number; height: number } }
 let desktopState: DesktopState = {}
 const stateFile = path.join(app.getPath('userData'), 'desktop-state.json')
@@ -28,7 +53,7 @@ try { desktopState = JSON.parse(readFileSync(stateFile, 'utf8')) } catch { /* fi
 function saveDesktopState() { try { writeFileSync(stateFile, JSON.stringify(desktopState)) } catch { /* read-only profile */ } }
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
-app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus() })
+app.on('second-instance', () => { if (mainWindow?.isFocused()) mainWindow.webContents.focus(); else mainWindow?.flashFrame(true) })
 let playbackBlocker: number | null = null
 function stopPlaybackBlocker() {
   if (playbackBlocker !== null) powerSaveBlocker.stop(playbackBlocker)
@@ -39,33 +64,34 @@ const VITE_DEV_SERVER_URL = app.isPackaged ? undefined : process.env.VITE_DEV_SE
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1920,
-    height: 1080,
+    width: process.platform === 'win32' ? 1280 : 1920,
+    height: process.platform === 'win32' ? 720 : 1080,
     ...desktopState.bounds,
-    fullscreen: gameMode || desktopState.fullscreen !== false,
+    fullscreen: process.platform !== 'win32' && (gameMode || desktopState.fullscreen !== false),
     icon: path.join(process.env.VITE_PUBLIC!, 'icon.png'),
     minWidth: 1280,
     minHeight: 720,
     backgroundColor: '#111827',
     autoHideMenuBar: true,
-    ...(process.platform === 'win32' ? { alwaysOnTop: false, kiosk: false } : {}),
-    fullscreenable: true,
+    ...(process.platform === 'win32' ? { frame: false, alwaysOnTop: false, kiosk: false } : {}),
+    fullscreenable: process.platform !== 'win32',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       autoplayPolicy: 'no-user-gesture-required',
-      ...(process.platform === 'win32' ? { backgroundThrottling: false } : {}),
+      ...(process.platform === 'win32' ? { backgroundThrottling: false, disableHtmlFullscreenWindowResize: true } : {}),
     },
   })
+  if (process.platform === 'win32' && desktopState.fullscreen !== false) setWindowFullscreen(true)
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   mainWindow.on('closed', stopPlaybackBlocker)
-  mainWindow.on('close', () => { desktopState.bounds = mainWindow?.getNormalBounds(); saveDesktopState() })
+  mainWindow.on('close', () => { desktopState.bounds = borderlessFullscreen ? windowedBounds : mainWindow?.getNormalBounds(); saveDesktopState() })
   mainWindow.webContents.on('render-process-gone', stopPlaybackBlocker)
   mainWindow.webContents.on('did-start-navigation', stopPlaybackBlocker)
 
@@ -76,20 +102,26 @@ function createWindow() {
   }
 }
 
-ipcMain.handle('window:toggle-fullscreen', () => {
-  if (!mainWindow) return false
-  const next = !mainWindow.isFullScreen()
-  mainWindow.setFullScreen(next)
+ipcMain.handle('window:toggle-fullscreen', (event) => {
+  if (event.sender !== mainWindow?.webContents) return false
+  if (!mainWindow.isFocused()) return isWindowFullscreen()
+  const next = !isWindowFullscreen()
+  setWindowFullscreen(next)
   return next
 })
 
 ipcMain.handle('window:is-fullscreen', () => {
-  return mainWindow?.isFullScreen() ?? false
+  return isWindowFullscreen()
+})
+
+ipcMain.handle('window:action', (event, action: string) => {
+  if (process.platform !== 'win32' || event.sender !== mainWindow?.webContents || !mainWindow.isFocused()) return
+  if (action === 'minimize') mainWindow.minimize()
+  else if (action === 'close') mainWindow.close()
 })
 
 ipcMain.handle('window:focus', (event) => {
-  if (event.sender !== mainWindow?.webContents) return
-  mainWindow.focus()
+  if (event.sender !== mainWindow?.webContents || !mainWindow.isFocused()) return
   mainWindow.webContents.focus()
 })
 

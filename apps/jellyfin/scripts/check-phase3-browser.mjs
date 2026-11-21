@@ -13,6 +13,7 @@ const wait = async (expression, timeout = 15000) => { const end = Date.now() + t
 const click = async (selector, text) => {
   const q = `[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=> !e.disabled && [e.textContent.trim(),e.getAttribute('aria-label'),e.querySelector('strong')?.textContent.trim()].some(v=>v===${JSON.stringify(text)}))`
   await wait(`Boolean(${q})`)
+  if (selector === '.nav-rail button') { await evaluate(`${q}.focus()`); await wait(`${q}.getBoundingClientRect().left>=0`) }
   const point = await evaluate(`(()=>{const e=${q};e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
   await frames()
@@ -28,10 +29,10 @@ await send('Page.enable')
 await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false })
 await send('Page.addScriptToEvaluateOnNewDocument', { source: `window.testPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.testPad];` })
 if (process.env.RESUME_PHASE3 && await evaluate(`!document.querySelector('button')`)) { await send('Page.navigate', { url: 'http://localhost:5173' }); await wait(`!!document.querySelector('.nav-rail')`) }
-if (process.env.RESUME_PHASE3) await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.loadPreferences(),idleMinutes:0});window.dispatchEvent(new Event('valvefin:activity'));window.testPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.testPad]})()`)
+if (process.env.RESUME_PHASE3) await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.loadPreferences(),idleMinutes:0});window.dispatchEvent(new Event('valvefin:activity'));document.querySelector('.player-top button')?.click();window.testPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.testPad]})()`)
 if (!process.env.RESUME_PHASE3) {
-await send('Page.navigate', { url: 'http://localhost:5173' })
-await wait(`document.readyState==='complete' && !!document.querySelector('button')`)
+await send('Page.navigate', { url: 'http://localhost:5173/scripts/review-harness.html' })
+await wait(`Boolean(window.reviewMount)`)
 await evaluate(`(async()=>{const m=await import('/src/lib/jellyfin.ts');const c=await import('/src/lib/catalog.ts');const p=await import('/src/lib/preferences.ts');c.rememberProfile(await m.authenticate({serverUrl:'http://127.0.0.1:8096',username:'devin',password:'devin'}));p.savePreferences(p.preferenceDefaults)})()`)
 await send('Page.navigate', { url: 'http://localhost:5173' })
 await wait(`document.querySelectorAll('.featured .title-logo').length===1 && document.querySelectorAll('.section').length>=5`)
@@ -48,13 +49,13 @@ await shot('library')
 await click('.virtual-grid button', 'Valve Test AVC')
 await wait(`document.querySelector('.cinematic .title-logo') && !document.body.innerText.includes('Loading title') && document.querySelector('.detail-meta')?.textContent.includes('Ends at')`)
 await shot('details')
-await click('button', 'Media info')
+await evaluate(`document.querySelector('[aria-label="More"]').click()`)
 await wait(`/h264/i.test(document.querySelector('.media-info')?.textContent)`)
 console.log('PASS movie details settles without lingering Loading; full-bleed backdrop, logo, badges, ends-at and media panel')
 }
 if (run(1)) {
-await wait(`document.querySelectorAll('.section .poster-card').length>0`)
-await click('.section .poster-card', 'Valve Test Performer')
+await wait(`document.querySelectorAll('.section .person-card').length>0`)
+await click('.section .person-card', 'Valve Test Performer')
 await wait(`document.body.textContent.includes('Filmography') && document.querySelector('.section [aria-label="Valve Test AVC"]')`)
 await shot('person')
 console.log('PASS cast opens person screen with live filmography')
@@ -174,7 +175,7 @@ await evaluate(`window.fetch=window.nativeFetch;localStorage.removeItem('valvefi
 console.log('PASS 5,000-title fixture: offsets 0/60/120/180, bounded virtual DOM, deep-card Back restores focus/scroll, empty/error library states')
 }
 if (run(7)) {
-if (await evaluate(`!!document.querySelector('video')`)) await click('button', '← Back')
+if (await evaluate(`!!document.querySelector('video')`)) await click('.player-top button', 'Back')
 await evaluate(`window.fetch=window.nativeFetch??window.fetch;window.open=window.realWindowOpen??window.open`)
 await click('.nav-rail button', 'Home'); await click('.nav-rail button', 'Movies')
 await wait(`document.querySelector('.virtual-grid [aria-label="Valve Test AVC"]')`)
@@ -182,7 +183,7 @@ await evaluate(`(async()=>{
  const m=await import('/src/lib/jellyfin.ts');const c=await import('/src/lib/catalog.ts');const s=m.loadSession();const movie=(await c.queryItems(s,{IncludeItemTypes:'Movie'})).Items.find(i=>i.Name==='Valve Test AVC');window.testMovie=movie.Id;window.extrasFetch=window.fetch;window.realWindowOpen=window.open;
  window.open=(url)=>{window.openedTrailer=url;return null};
  window.fetch=async(input,init)=>{const u=new URL(typeof input==='string'?input:input.url,location.href);
-  if(u.pathname==='/Users/'+s.userId+'/Items/'+movie.Id){const r=await window.extrasFetch(input,init);const item=await r.json();item.Chapters=[{Name:'The Launch',StartPositionTicks:250000000}];item.RemoteTrailers=[{Url:'https://www.youtube.com/watch?v=valvefin-test'}];item.MediaSources=[item.MediaSources[0],{...item.MediaSources[0],Id:'alternate-version',Name:'Alternate 720p',MediaStreams:item.MediaSources[0].MediaStreams.map(v=>v.Type==='Video'?{...v,Height:720}:v)}];return Response.json(item)}
+  if(u.pathname==='/Users/'+s.userId+'/Items/'+movie.Id){const r=await window.extrasFetch(input,init);const item=await r.json();item.Chapters=[{Name:'The Launch',StartPositionTicks:250000000}];item.RemoteTrailers=[{Url:'https://www.youtube.com/watch?v=valvefin-test'}];item.MediaSources=[item.MediaSources[0],{...item.MediaSources[0],Id:'alternate-version',Name:'Alternate 720p',MediaStreams:item.MediaSources[0].MediaStreams.map(v=>v.Type==='Video'?{...v,Height:720,DisplayTitle:'720p H264 SDR'}:v)}];return Response.json(item)}
   if(u.pathname==='/Items/'+movie.Id+'/LocalTrailers'||u.pathname==='/Items/'+movie.Id+'/SpecialFeatures')return Response.json([{...movie,Name:u.pathname.endsWith('LocalTrailers')?'Local trailer fixture':'Special feature fixture'}]);
   return window.extrasFetch(input,init)
  }
@@ -191,9 +192,9 @@ await click('.virtual-grid .poster-card', 'Valve Test AVC')
 await wait(`document.body.textContent.includes('Local trailer fixture') && document.body.textContent.includes('Special feature fixture')`)
 const firstVersion = await evaluate(`[...document.querySelectorAll('main button')].find(e=>e.textContent.startsWith('Version:')).textContent.trim()`)
 await click('main button', firstVersion)
-await wait(`document.querySelector('.media-badges')?.textContent.includes('720p')`)
+await wait(`document.querySelector('.detail-media')?.textContent.includes('720p')`)
 await click('main button', 'Version: Alternate 720p')
-await click('main button', 'Trailer 1 ↗')
+await click('main button', 'Trailer')
 assert.equal(await evaluate('window.openedTrailer'), 'https://www.youtube.com/watch?v=valvefin-test')
 await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.preferenceDefaults,idleMinutes:1})})()`)
 await shot('detail-extras')
@@ -242,7 +243,7 @@ for (let i=0;i<5 && await evaluate(`document.querySelector('.featured .title-log
 const expected = await evaluate(`(async()=>{const m=await import('/src/lib/jellyfin.ts');const c=await import('/src/lib/catalog.ts');const s=m.loadSession();const show=(await c.queryItems(s,{IncludeItemTypes:'Series'})).Items[0];window.heroSeries=show.Id;return (await m.getNextUp(s,show.Id)).Name})()`)
 await click('.featured button', 'Play')
 await wait(`document.querySelector('video')?.currentTime>0.1 && document.body.textContent.includes(${JSON.stringify(expected)})`)
-await click('button','← Back')
+await click('.player-top button','Back')
 await wait(`!!document.querySelector('.featured')`)
 await evaluate(`window.heroFetch=window.fetch;window.heroMode='empty';window.fetch=async(input,init)=>{const u=new URL(typeof input==='string'?input:input.url,location.href);if(u.pathname==='/Shows/NextUp'||u.pathname.endsWith('/Episodes'))return window.heroMode==='empty'?Response.json({Items:[],TotalRecordCount:0}):new Response('Unavailable',{status:503});return window.heroFetch(input,init)}`)
 await click('.featured button','Play')
