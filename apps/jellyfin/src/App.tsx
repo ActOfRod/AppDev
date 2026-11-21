@@ -16,7 +16,7 @@ import { MusicPlayer, MusicScreen } from './components/MusicPlayer'
 import { Screensaver } from './components/Screensaver'
 import './styles.css'
 
-type BrowseView = { screen: 'home' | 'search' | 'favorites' | 'settings' | 'music' } | { screen: 'library'; library: JellyfinItem } | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
+type BrowseView = { screen: 'home' | 'search' | 'favorites' | 'settings' | 'music' } | { screen: 'library'; library: JellyfinItem; returnTo?: BrowseView } | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
 type View = BrowseView | { screen: 'login' } | { screen: 'prompt'; item: JellyfinItem; returnTo: BrowseView } | { screen: 'player'; item: JellyfinItem; start?: number; source?: string; returnTo: BrowseView }
 
 export default function App() {
@@ -42,6 +42,7 @@ export default function App() {
     const back = () => {
       if (context) { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()); return }
       if (view.screen === 'detail' || view.screen === 'prompt') setView(view.returnTo)
+      else if (view.screen === 'library' && view.returnTo) setView(view.returnTo)
       else if (view.screen !== 'player' && view.screen !== 'login') setView({ screen: 'home' })
     }
     const actions = (e: Event) => {
@@ -53,7 +54,7 @@ export default function App() {
     return () => { window.removeEventListener('jellyfin:back', back); window.removeEventListener('valvefin:context', actions) }
   }, [view, context, session])
   const browse: BrowseView = ['player', 'prompt', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
-  const open = (item: JellyfinItem) => setView({ screen: 'detail', item, returnTo: browse })
+  const open = (item: JellyfinItem) => setView(item.Type === 'BoxSet' || item.Type === 'CollectionFolder' ? { screen: 'library', library: item, returnTo: browse } : { screen: 'detail', item, returnTo: browse })
   const play = async (item: JellyfinItem, start?: number, source?: string) => {
     if (!session) return
     setContext(null)

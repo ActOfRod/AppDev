@@ -4,9 +4,13 @@ import { queryItems } from '../lib/catalog'
 import type { JellyfinItem, JellyfinSession } from '../lib/jellyfin'
 import { EditButton, Row } from '../components/Browse'
 
+const searches = new Map<string, string>()
+
 export function SearchScreen({ session, open }: { session: JellyfinSession; open: (i: JellyfinItem) => void }) {
   useScreenMemory('search')
-  const [text, set] = useState('')
+  const searchKey = session.serverUrl + session.userId
+  const [text, set] = useState(() => searches.get(searchKey) ?? '')
+  useEffect(() => { searches.set(searchKey, text) }, [searchKey, text])
   const [items, setItems] = useState<JellyfinItem[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)

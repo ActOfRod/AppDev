@@ -18,7 +18,7 @@ const click = async (selector, text) => {
 }
 const pad = async (index) => { await evaluate(`window.testPad.buttons[${index}].pressed=true`); await new Promise((r) => setTimeout(r, 80)); await evaluate(`window.testPad.buttons[${index}].pressed=false`); await new Promise((r) => setTimeout(r, 80)) }
 const screenshots = '/home/ubuntu/shots/phase3'
-const stage = ['library', 'person', 'search', 'settings', 'music', 'profiles', 'polish', 'extras', 'avatar', 'hero'].indexOf(process.env.RESUME_PHASE3)
+const stage = ['library', 'person', 'search', 'settings', 'music', 'profiles', 'polish', 'extras', 'avatar', 'hero', 'collection'].indexOf(process.env.RESUME_PHASE3)
 const run = (n) => !process.env.RESUME_PHASE3 || n >= stage
 await mkdir(screenshots, { recursive: true })
 const shot = async (name) => { const r = await send('Page.captureScreenshot', { format: 'png' }); await writeFile(`${screenshots}/${name}.png`, Buffer.from(r.data, 'base64')) }
@@ -219,7 +219,7 @@ await shot('profiles')
 await click('.profile', 'devin'); await wait(`!!document.querySelector('.nav-rail')`)
 console.log('PASS saved profile avatar renders authenticated image and profile selection returns to Home')
 await click('.nav-rail button', 'Search')
-await evaluate(`document.querySelector('input[aria-label="Search titles"]').focus()`)
+await evaluate(`(()=>{const input=document.querySelector('input[aria-label="Search titles"]');input.focus();input.select()})()`)
 await send('Input.insertText', { text: 'Valve' })
 await wait(`document.querySelectorAll('.section .poster-card').length>4`)
 await click('button', 'Controller keyboard: Valve')
@@ -249,6 +249,19 @@ await wait(`!!document.querySelector('.global-error')`)
 await click('.global-error button','Dismiss')
 await evaluate(`window.fetch=window.heroFetch`)
 console.log('PASS featured series Play starts live Next Up; empty series and request errors show dismissible recovery banner')
+}
+if (run(10)) {
+await click('.nav-rail button', 'Search')
+await evaluate(`(()=>{const input=document.querySelector('input[aria-label="Search titles"]');input.focus();input.select()})()`)
+await send('Input.insertText', { text: 'ValveFin Collection' })
+await wait(`!!document.querySelector('[aria-label="ValveFin Collection"]')`)
+await click('.poster-card', 'ValveFin Collection')
+await wait(`document.querySelector('main h1')?.textContent.includes('ValveFin Collection') && document.querySelectorAll('.virtual-grid .poster-card').length===2`)
+await shot('collection')
+await pad(1)
+await wait(`document.querySelector('input[aria-label="Search titles"]')?.value==='ValveFin Collection' && document.activeElement?.getAttribute('aria-label')==='ValveFin Collection'`)
+console.log('PASS collection search card opens paginated collection contents with both movies and total, not an empty detail screen')
+console.log('PASS Back from collection restores search query, results and focused collection card')
 }
 await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences(p.preferenceDefaults)})()`)
 console.log('SCREENSHOTS '+screenshots+'/{home,library,details,person,context,keyboard,search,settings,music,music-queue,profiles,quick-connect}.png')
