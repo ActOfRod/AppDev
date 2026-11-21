@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, powerSaveBlocker, shell } from 'electron'
 import path from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import dgram from 'node:dgram'
+import { steamOverlaySwitches } from './steam-overlay'
+
+for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
 
 if (process.platform === 'linux') {
   if (process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox')
@@ -45,6 +48,8 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#111827',
     autoHideMenuBar: true,
+    alwaysOnTop: false,
+    kiosk: false,
     fullscreenable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
