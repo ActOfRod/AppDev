@@ -43,6 +43,15 @@ try{
   assert.equal((await liveItems(s,'/LiveTv/Programs')).length,405)
   globalThis.fetch=async()=>Response.json({Items:[]});assert.deepEqual(await liveItems(s,'/LiveTv/Programs'),[])
   globalThis.fetch=async()=>new Response('Unavailable',{status:503});await assert.rejects(liveItems(s,'/LiveTv/Channels'))
+  for(const serverUrl of ['https://example.test','https://example.test/jellyfin','https://example.test/jellyfin/']){
+    for(const path of ['/Videos/channel/master.m3u8?existing=1','Videos/channel/master.m3u8?existing=1','https://cdn.example.test/live/master.m3u8?existing=1']){
+      globalThis.fetch=async()=>Response.json({PlaySessionId:'play',MediaSources:[{Id:'source',LiveStreamId:'live',TranscodingUrl:path}]})
+      const playback=await openLive({...s,serverUrl},cs[0]);const url=new URL(playback.url)
+      assert.equal(url.origin+url.pathname,path.startsWith('https:')?'https://cdn.example.test/live/master.m3u8':serverUrl.replace(/\/+$/,'')+'/Videos/channel/master.m3u8')
+      assert.equal(url.searchParams.get('existing'),'1');assert.equal(url.searchParams.get('LiveStreamId'),'live');assert.equal(url.searchParams.get('api_key'),s.accessToken)
+    }
+  }
+  console.log('PASS live HLS URLs preserve server subpaths, root/relative paths, absolute origins and query parameters')
   globalThis.fetch=async(url,init)=>{calls.push({url:String(url),body:init?.body&&JSON.parse(init.body)});return String(url).includes('/PlaybackInfo')?Response.json({PlaySessionId:'play',MediaSources:[{Id:'source',LiveStreamId:'opened-without-url'}]}):new Response(null,{status:204})}
   await assert.rejects(openLive(s,cs[0]),/did not provide/)
   assert.ok(calls.some(c=>c.url.includes('/LiveStreams/Close?LiveStreamId=opened-without-url')))

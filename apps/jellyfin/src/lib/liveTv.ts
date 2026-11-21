@@ -25,7 +25,8 @@ export async function openLive(s: JellyfinSession, channel: LiveItem): Promise<L
   const source = data.MediaSources?.[0]
   try {
     if (!source?.LiveStreamId || !source.TranscodingUrl) throw Error('The server did not provide a playable live stream')
-    const url = new URL(source.TranscodingUrl, s.serverUrl + '/')
+    const streamUrl = /^https?:\/\//i.test(source.TranscodingUrl) ? source.TranscodingUrl : `${s.serverUrl.replace(/\/+$/, '')}/${source.TranscodingUrl.replace(/^\//, '')}`
+    const url = new URL(streamUrl)
     url.searchParams.set('api_key', s.accessToken)
     url.searchParams.set('LiveStreamId', source.LiveStreamId)
     return { channel, sourceId: source.Id, streamId: source.LiveStreamId, playSessionId: data.PlaySessionId, url: url.toString() }
