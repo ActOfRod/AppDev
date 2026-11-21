@@ -8,8 +8,6 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
   const api = window.jellyfinDesktop?.updates
   const [state, setState] = useState<UpdateState | null>(null)
   const [error, setError] = useState('')
-  const [dismissed, setDismissed] = useState('')
-  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     if (!api) return
     let active = true, notified = false
@@ -23,7 +21,15 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
     const request = command === 'automatic' ? api.automatic(Boolean(value)) : api[command]()
     void request.catch((e) => setError(e instanceof Error ? e.message : 'Update request failed'))
   }
-  return <UpdatesContext value={{ state, error, action }}>{children}{state?.release && dismissed !== state.release.version && (state.status === 'available' || expanded) && <aside className="update-notice" aria-label="Client update"><p role="status">ValveFin {state.release.version} is available.</p><button className="ghost" onClick={() => setExpanded(!expanded)}>{expanded ? 'Hide details' : 'Update details'}</button><button className="ghost" disabled={state.status === 'downloading' || state.status === 'installing'} onClick={() => { setDismissed(state.release!.version); setExpanded(false) }}>Dismiss update</button>{expanded && <UpdatesSection />}</aside>}</UpdatesContext>
+  return <UpdatesContext value={{ state, error, action }}>{children}</UpdatesContext>
+}
+
+export function UpdateNotice({ suppressed }: { suppressed: boolean }) {
+  const { state } = useContext(UpdatesContext)
+  const [dismissed, setDismissed] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  if (suppressed) return null
+  return state?.release && dismissed !== state.release.version && (state.status === 'available' || expanded) && <aside className="update-notice" aria-label="Client update"><p role="status">ValveFin {state.release.version} is available.</p><button className="ghost" onClick={() => setExpanded(!expanded)}>{expanded ? 'Hide details' : 'Update details'}</button><button className="ghost" disabled={state.status === 'downloading' || state.status === 'installing'} onClick={() => { setDismissed(state.release!.version); setExpanded(false) }}>Dismiss update</button>{expanded && <UpdatesSection />}</aside>
 }
 
 function ReleaseNotes({ notes }: { notes: string }) {

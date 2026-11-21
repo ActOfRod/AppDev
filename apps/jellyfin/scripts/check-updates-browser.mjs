@@ -18,6 +18,15 @@ try{
  await run(`document.querySelector('#unchanged-focus').focus();emitUpdate({status:'available',release})`)
  await wait(`!!document.querySelector('.update-notice')`)
  assert.equal(await run('document.activeElement.id'),'unchanged-focus')
+ for(const screen of ['player','live']){
+  await run(`setPlayback(${JSON.stringify(screen)})`);await frames()
+  assert.equal(await run(`!!document.querySelector('.update-notice')`),false,`existing notice hidden during ${screen}`)
+  await run(`emitUpdate({status:'checking',release:undefined});emitUpdate({status:'available',release})`);await frames()
+  assert.equal(await run(`!!document.querySelector('.update-notice')`),false,`new notice deferred during ${screen}`)
+  await run(`setPlayback('settings')`);await wait(`!!document.querySelector('.update-notice')`)
+  assert.equal(await run('document.activeElement.id'),'unchanged-focus')
+ }
+ console.log('PASS existing and newly discovered update notices stay hidden throughout VOD/Live playback and reappear afterward without moving focus')
  await shot('updates-available')
  await focus('Automatically check');assert.equal(await run('updateState.automatic'),false)
  await focus('Check for updates');assert.equal(await run('updateState.status'),'available')

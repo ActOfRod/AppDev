@@ -3,7 +3,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import '../src/styles.css'
-import { UpdatesProvider, UpdatesSection } from '../src/components/Updates'
+import { UpdatesProvider, UpdatesSection, UpdateNotice } from '../src/components/Updates'
 import { useControllerNavigation } from '../src/hooks/useControllerNavigation'
 window.pad = {index: 0, connected: true, axes: [0,0], buttons: Array.from({length:18},()=>({pressed:false,value:0}))}
 navigator.getGamepads = () => [pad]
@@ -21,6 +21,6 @@ window.jellyfinDesktop = {updates:{
  cancel:async()=>{emitUpdate({status:'available',received:0});finishDownload?.()},
  openRelease:async()=>window.openedRelease=release.url,
 }}
-function Fixture(){useControllerNavigation(true);return React.createElement(UpdatesProvider,null,React.createElement('main',{className:'app-shell'},React.createElement('button',{id:'unchanged-focus',className:'ghost'},'Back'),React.createElement('h1',null,'Settings'),React.createElement(UpdatesSection)))}
+function Fixture(){const [screen,setScreen]=React.useState('settings');window.setPlayback=setScreen;const playing=screen==='player'||screen==='live';useControllerNavigation(!playing);return React.createElement(UpdatesProvider,null,React.createElement('main',{className:'app-shell'},React.createElement('button',{id:'unchanged-focus',className:'ghost'},'Back'),React.createElement('h1',null,screen),React.createElement(UpdatesSection)),React.createElement(UpdateNotice,{suppressed:playing}))}
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(Fixture)))
 </script></body></html>
