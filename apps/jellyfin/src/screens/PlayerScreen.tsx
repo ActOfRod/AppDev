@@ -173,8 +173,8 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     const active = document.activeElement
     if (
       active instanceof HTMLElement &&
-      active.tagName === 'BUTTON' &&
-      active.closest('.subtitle-menu, .audio-menu, .player-osd, .playback-prompts')
+      active.matches('button, input, select, a[href], [role="button"]') &&
+      osdRef.current?.closest('.player-shell')?.contains(active)
     ) {
       active.click()
       return true

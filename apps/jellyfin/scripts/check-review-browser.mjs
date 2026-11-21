@@ -75,7 +75,7 @@ try {
   await click('Quick Connect')
   await wait('window.reviewSuccess===1')
   console.log('PASS Quick Connect pending/cancel, approved exchange failure surfaces error, retry succeeds')
-  await evaluate(`window.reviewPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.reviewPad];window.reviewNext=0;
+  await evaluate(`window.reviewPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};window.reviewPadReads=0;window.reviewPadDownReads=0;navigator.getGamepads=()=>{window.reviewPadReads++;if(window.reviewPad.buttons[0].pressed)window.reviewPadDownReads++;return[window.reviewPad]};window.reviewNext=0;
     window.reviewEpisodePlayer=()=>window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewEpisode,onBack:()=>{},onNext:()=>window.reviewNext++,startPositionTicks:0});await window.reviewEpisodePlayer()`)
   await wait(`document.querySelector('video')?.readyState>=2`)
   await evaluate(`document.querySelector('video').currentTime=document.querySelector('video').duration-25`)
@@ -94,6 +94,27 @@ try {
   await wait(`document.activeElement?.textContent==='Play now · A'`)
   await pressA('window.reviewNext===1')
   console.log('PASS Up Next gamepad A activates focused Play/Pause and Cancel; default Play now still advances')
+  const focusedCases = []
+  for (const upNext of [false, true]) for (const key of ['Enter', 'A']) for (const control of ['Back', 'Seek']) {
+    await evaluate(`window.reviewBack=0;window.reviewNext=0;await window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.${upNext ? 'reviewEpisode' : 'reviewMovie'},onBack:()=>window.reviewBack++,onNext:()=>window.reviewNext++,startPositionTicks:0})`)
+    await wait(`document.querySelector('video')?.readyState>=2`)
+    if (upNext) {
+      await evaluate(`document.querySelector('video').currentTime=document.querySelector('video').duration-25`)
+      await wait(`!!document.querySelector('.up-next')`)
+    }
+    const selector = control === 'Back' ? '.player-top button' : 'input[aria-label="Seek"]'
+    await evaluate(`document.querySelector('video').pause();document.querySelector(${JSON.stringify(selector)}).focus()`)
+    await wait(`!!document.querySelector('.osd-visible')&&document.activeElement.matches(${JSON.stringify(selector)})`)
+    const neutralReads = await evaluate('window.reviewPadReads')
+    await wait(`window.reviewPadReads>${neutralReads}`)
+    const downReads = await evaluate('window.reviewPadDownReads')
+    await evaluate(key === 'Enter' ? `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))` : `window.reviewPad.buttons[0].pressed=true`)
+    if (key === 'A') await wait(`window.reviewPadDownReads>${downReads}`)
+    await evaluate(`window.reviewPad.buttons[0].pressed=false`)
+    focusedCases.push({ upNext, key, control, ...await evaluate(`({back:window.reviewBack,next:window.reviewNext})`) })
+  }
+  assert.deepEqual(focusedCases, focusedCases.map(({ upNext, key, control }) => ({ upNext, key, control, back: control === 'Back' ? 1 : 0, next: 0 })))
+  console.log('PASS Enter/gamepad A activate focused top-bar Back with and without Up Next; focused seek never starts the next episode')
   await evaluate(`window.reviewReports=[];window.reviewSetInterval=window.setInterval;window.setInterval=(callback,ms,...args)=>window.reviewSetInterval(callback,ms===10000?100:ms,...args);
     await window.reviewMount('MusicPlayer',{session:window.reviewSession,queue:window.reviewTracks,setQueue:()=>{},suspended:false})`)
   await wait(`document.querySelector('audio')?.readyState>=2 && !document.querySelector('audio').paused`)
