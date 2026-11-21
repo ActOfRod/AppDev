@@ -1,6 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { UpdateState } from './update-types'
 
 contextBridge.exposeInMainWorld('jellyfinDesktop', {
+  updates: {
+    state: () => ipcRenderer.invoke('updates:command', 'state'),
+    check: () => ipcRenderer.invoke('updates:command', 'check'),
+    install: () => ipcRenderer.invoke('updates:command', 'install'),
+    cancel: () => ipcRenderer.invoke('updates:command', 'cancel'),
+    automatic: (enabled: boolean) => ipcRenderer.invoke('updates:command', 'automatic', enabled),
+    openRelease: () => ipcRenderer.invoke('updates:command', 'open'),
+    subscribe: (callback: (state: UpdateState) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state)
+      ipcRenderer.on('updates:state', listener)
+      return () => ipcRenderer.removeListener('updates:state', listener)
+    },
+  },
   platform: process.platform,
   focusWindow: () => ipcRenderer.invoke('window:focus') as Promise<void>,
   toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen') as Promise<boolean>,
