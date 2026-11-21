@@ -28,16 +28,23 @@ process.env.VITE_PUBLIC = app.isPackaged
 let mainWindow: BrowserWindow | null = null
 let borderlessFullscreen = false
 let windowedBounds: Electron.Rectangle | undefined
+let windowedMaximized = false
 function isWindowFullscreen() { return process.platform === 'win32' ? borderlessFullscreen : mainWindow?.isFullScreen() ?? false }
 function setWindowFullscreen(enabled: boolean) {
   if (!mainWindow) return
   if (process.platform !== 'win32') { mainWindow.setFullScreen(enabled); return }
   if (enabled === borderlessFullscreen) return
   if (enabled) {
-    windowedBounds = mainWindow.getBounds()
+    windowedMaximized = mainWindow.isMaximized()
+    windowedBounds = windowedMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()
+    if (windowedMaximized) mainWindow.unmaximize()
     mainWindow.setBounds(screen.getDisplayMatching(windowedBounds).bounds)
-  } else if (windowedBounds) mainWindow.setBounds(windowedBounds)
+  } else if (windowedBounds) {
+    mainWindow.setBounds(windowedBounds)
+    if (windowedMaximized) mainWindow.maximize()
+  }
   borderlessFullscreen = enabled
+  mainWindow.webContents.send('window:fullscreen-changed', enabled)
 }
 type DesktopState = { fullscreen?: boolean; bounds?: { x?: number; y?: number; width: number; height: number } }
 let desktopState: DesktopState = {}
@@ -105,6 +112,12 @@ ipcMain.handle('window:toggle-fullscreen', (event) => {
 
 ipcMain.handle('window:is-fullscreen', () => {
   return isWindowFullscreen()
+})
+
+ipcMain.handle('window:action', (event, action: string) => {
+  if (process.platform !== 'win32' || event.sender !== mainWindow?.webContents || !mainWindow.isFocused()) return
+  if (action === 'minimize') mainWindow.minimize()
+  else if (action === 'close') mainWindow.close()
 })
 
 ipcMain.handle('window:focus', (event) => {

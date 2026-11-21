@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head><title>ValveFin window controls check</title></head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import '../src/styles.css'
+      import { WindowsWindowControls } from '../src/components/WindowsWindowControls'
+      window.mode = false
+      window.modeListeners = new Set()
+      window.actions = []
+      window.emitMode = (value) => { window.mode = value; for (const callback of modeListeners) callback(value) }
+      window.jellyfinDesktop = {
+        platform: new URLSearchParams(location.search).get('platform') ?? 'win32',
+        isFullscreen: async () => mode,
+        onFullscreenChange: (callback) => { modeListeners.add(callback); return () => modeListeners.delete(callback) },
+        toggleFullscreen: async () => { emitMode(!mode); return mode },
+        windowAction: async (action) => { actions.push(action) },
+      }
+      window.controlsRoot = createRoot(document.getElementById('root'))
+      window.renderControls = () => controlsRoot.render(React.createElement(React.StrictMode, null,
+        React.createElement(WindowsWindowControls),
+        React.createElement('main', { className: 'player-shell' },
+          React.createElement('header', { className: 'player-top is-visible' }, React.createElement('button', { className: 'ghost' }, 'Back')),
+          React.createElement('div', { className: 'player-stage' }, React.createElement('p', null, 'Windowed playback preview')))))
+      renderControls()
+    </script>
+  </body>
+</html>

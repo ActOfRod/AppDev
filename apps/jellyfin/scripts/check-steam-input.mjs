@@ -55,17 +55,23 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], ['win32', false, true], ['linux', false, false], ['linux', true, false]]) {
   const switches = new Map([['disable-features', 'ExistingFeature']]), handlers = new Map()
   const appEvents = new Map(), windowEvents = new Map()
-  let window, focus = 0, rendererFocus = 0, focused = true, nativeFullscreenCalls = 0, flashes = 0
+  let window, focus = 0, rendererFocus = 0, focused = true, nativeFullscreenCalls = 0, flashes = 0, minimized = 0, closed = 0, maximized = false
+  const modes = []
   let bounds = { x: 120, y: 80, width: 1280, height: 720 }, nativeFullscreen = false
   const displayBounds = { x: 1920, y: 0, width: 1920, height: 1080 }
   const changes = []
   const electron = {
     app: { commandLine: { appendSwitch: (k, v = '') => switches.set(k, v), getSwitchValue: (k) => switches.get(k) ?? '' }, getPath: () => '/unused', requestSingleInstanceLock: () => true, on: (name, callback) => appEvents.set(name, callback), whenReady: () => Promise.resolve(), isPackaged: true },
     BrowserWindow: class {
-      constructor(options) { this.options = options; window = this; nativeFullscreen = options.fullscreen; this.webContents = { focus: () => rendererFocus++, on() {}, setWindowOpenHandler() {} } }
+      constructor(options) { this.options = options; window = this; nativeFullscreen = options.fullscreen; this.webContents = { focus: () => rendererFocus++, on() {}, setWindowOpenHandler() {}, send: (channel, value) => { assert.equal(channel, 'window:fullscreen-changed'); modes.push(value) } } }
       focus() { focus++ }
       isFocused() { return focused }
       isFullScreen() { return nativeFullscreen }
+      isMaximized() { return maximized }
+      maximize() { maximized = true }
+      unmaximize() { maximized = false }
+      minimize() { minimized++ }
+      close() { closed++ }
       setFullScreen(value) { nativeFullscreen = value; nativeFullscreenCalls++ }
       getBounds() { return { ...bounds } }
       getNormalBounds() { return { ...bounds } }
@@ -105,8 +111,13 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
     if (launchFullscreen) assert.deepEqual(bounds, displayBounds)
   }
   handlers.get('window:focus')({ sender: {} })
+  handlers.get('window:action')({ sender: {} }, 'close')
+  assert.equal(closed, 0)
   assert.equal(focus + rendererFocus, 0)
   focused = false
+  handlers.get('window:action')({ sender: window.webContents }, 'minimize')
+  handlers.get('window:action')({ sender: window.webContents }, 'close')
+  assert.equal(minimized + closed, 0)
   handlers.get('window:focus')({ sender: window.webContents })
   assert.equal(focus + rendererFocus, 0)
   const before = changes.length
@@ -117,6 +128,9 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   assert.equal(focus + rendererFocus, 0)
   assert.equal(windowEvents.has('blur'), false)
   focused = true
+  for (const action of ['minimize', 'close', 'invalid']) handlers.get('window:action')({ sender: window.webContents }, action)
+  assert.equal(minimized, platform === 'win32' ? 1 : 0)
+  assert.equal(closed, platform === 'win32' ? 1 : 0)
   handlers.get('window:focus')({ sender: window.webContents })
   assert.equal(focus, 0); assert.equal(rendererFocus, 1)
   const original = { ...bounds }
@@ -125,6 +139,34 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   assert.deepEqual(bounds, original)
   assert.equal(nativeFullscreenCalls, platform === 'win32' ? 0 : 2)
   assert.equal(focus, 0)
+  if (platform === 'win32') {
+    assert.deepEqual(modes, launchFullscreen ? [true, false, true] : [true, false])
+    if (launchFullscreen) handlers.get('window:toggle-fullscreen')({ sender: window.webContents })
+    window.maximize()
+    handlers.get('window:toggle-fullscreen')({ sender: window.webContents })
+    assert.equal(maximized, false)
+    handlers.get('window:toggle-fullscreen')({ sender: window.webContents })
+    assert.equal(maximized, true)
+    assert.equal(nativeFullscreenCalls, 0)
+  }
 }
 console.log('PASS main dispatch: Windows normal-z-order borderless fullscreen covers the matching display and restores bounds; native/HTML fullscreen disabled; background focus/toggle/relaunch never raise the window; foreground renderer focus only; Linux VA-API/Game Mode retained')
 console.log('PASS Windows retains in-process-gpu/disable-direct-composition; disables renderer/timer/occluded-window backgrounding and CalculateNativeWinOcclusion; preserves existing disabled features; backgroundThrottling=false; Linux unchanged')
+
+const preload = ts.transpileModule(await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
+let desktop
+const listeners = new Map(), invocations = []
+vm.runInNewContext(preload, { exports: {}, process: { platform: 'win32' }, require: () => ({
+  contextBridge: { exposeInMainWorld: (_name, value) => { desktop = value } },
+  ipcRenderer: { invoke: (...args) => { invocations.push(args); return Promise.resolve() }, on: (channel, callback) => listeners.set(channel, callback), removeListener: (channel) => listeners.delete(channel) },
+}) })
+await desktop.windowAction('minimize'); await desktop.windowAction('close')
+assert.deepEqual(invocations, [['window:action', 'minimize'], ['window:action', 'close']])
+const received = []
+const unsubscribe = desktop.onFullscreenChange((value) => received.push(value))
+listeners.get('window:fullscreen-changed')({}, true)
+listeners.get('window:fullscreen-changed')({}, 'invalid')
+assert.deepEqual(received, [true])
+unsubscribe()
+assert.equal(listeners.size, 0)
+console.log('PASS window controls: authenticated foreground Windows minimize/close only; mode events through preload validate booleans and unsubscribe; maximized windowed state survives borderless toggle without native fullscreen/focus; Linux unchanged')
