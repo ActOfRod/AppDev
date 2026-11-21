@@ -53,7 +53,7 @@ await send('Page.enable')
 await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false })
 if (process.env.RESUME_PHASE2 === 'visual') {
   await send('Page.navigate', { url: base })
-  await click('.media-rail button', 'Movies')
+  await click('.nav-rail button', 'Movies')
   await click('.poster-card', 'Valve Test AVC')
   await wait(`Boolean(document.querySelector('[data-focus-key="play"]'))`)
   await evaluate(`(document.querySelector('[data-focus-key="start-over"]') ?? document.querySelector('[data-focus-key="play"]')).click()`)
@@ -75,7 +75,7 @@ if (['quality', 'quality-resume', 'series'].includes(process.env.RESUME_PHASE2))
   if (process.env.RESUME_PHASE2 !== 'series') {
   if (process.env.RESUME_PHASE2 !== 'quality-resume') {
   await send('Page.navigate', { url: base })
-  await click('.media-rail button', 'Movies')
+  await click('.nav-rail button', 'Movies')
   await click('.poster-card', 'Valve Test AVC')
   await wait(`Boolean(document.querySelector('[data-focus-key="play"]'))`)
   await evaluate(`(document.querySelector('[data-focus-key="start-over"]') ?? document.querySelector('[data-focus-key="play"]')).click()`)
@@ -113,7 +113,7 @@ if (['quality', 'quality-resume', 'series'].includes(process.env.RESUME_PHASE2))
   }
   await pad(1)
   await send('Page.navigate', { url: base })
-  await click('.media-rail button', 'Shows')
+  await click('.nav-rail button', 'Shows')
   await click('.poster-card', 'Valve Test Show')
   const nextTitle = await evaluate(`(async () => { const m=await import('/src/lib/jellyfin.ts');const id=document.querySelector('.detail-actions [data-focus-key="play-series"]') ? document.querySelector('.detail-copy h1').textContent : '';const session=m.loadSession();const shows=await m.getLatestItems(session,{includeItemTypes:'Series',limit:24});return (await m.getNextUp(session,shows.find(i=>i.Name===id).Id)).Name })()`)
   await click('button', 'Play Next Up')
@@ -134,8 +134,8 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: `
   };
 ` })
 if (!process.env.RESUME_PHASE2) {
-await send('Page.navigate', { url: base })
-await wait(`document.readyState === 'complete'`)
+await send('Page.navigate', { url: base + '/scripts/review-harness.html' })
+await wait(`location.pathname.endsWith('/scripts/review-harness.html') && document.readyState === 'complete' && Boolean(window.reviewMount)`)
 await evaluate(`(async () => {
   const m = await import('/src/lib/jellyfin.ts');
   const session = await m.authenticate({serverUrl:'http://127.0.0.1:8096',username:'devin',password:'devin'});
@@ -146,13 +146,13 @@ await evaluate(`(async () => {
   for(const item of episodes) await fetch(session.serverUrl+'/UserItems/'+item.Id+'/UserData?userId='+session.userId,{method:'POST',headers,body:JSON.stringify({Played:false,PlaybackPositionTicks:item.Id===episodes[0].Id?200000000:0,LastPlayedDate:new Date().toISOString()})});
 })()`)
 await send('Page.navigate', { url: base })
-await wait(`Boolean(document.querySelector('.media-rail button'))`)
-await click('.media-rail button', 'Shows')
+await wait(`Boolean(document.querySelector('.nav-rail button'))`)
+await click('.nav-rail button', 'Shows')
 await click('.poster-card', 'Valve Test Show')
 await wait(`document.querySelector('[data-focus-key="play-series"]') !== null`)
 console.log('PASS series exposes Play Next Up')
 await click('.poster-card', 'Season 1')
-await click('.episode-row', '1. Valve Test Show S01E01')
+await click('.poster-card', 'Valve Test Show S01E01')
 await wait(`document.querySelector('[data-focus-key="start-over"]') !== null`)
 await screenshot('details')
 console.log('PASS episode details Resume and Start over')
@@ -225,12 +225,22 @@ assert.equal(await evaluate(`Boolean(document.querySelector('.up-next'))`), fals
 console.log('PASS Up next at earlier Outro, countdown, gamepad B cancellation')
 }
 await send('Page.navigate', { url: base })
+await wait(`Boolean(document.querySelector('.nav-rail button'))`)
+await evaluate(`(async () => {
+  const m=await import('/src/lib/jellyfin.ts');const s=m.loadSession();const headers={Authorization:'MediaBrowser Client="ValveFin", Device="BrowserTest", DeviceId="'+s.deviceId+'", Version="1", Token="'+s.accessToken+'"','Content-Type':'application/json'};
+  const r=await fetch(s.serverUrl+'/Items?UserId='+s.userId+'&Recursive=true&IncludeItemTypes=Episode&SearchTerm='+encodeURIComponent('Valve Test Show S01E01'),{headers});
+  const episode=(await r.json()).Items.find(i=>i.Name==='Valve Test Show S01E01');
+  const saved=await fetch(s.serverUrl+'/UserItems/'+episode.Id+'/UserData?userId='+s.userId,{method:'POST',headers,body:JSON.stringify({Played:false,PlaybackPositionTicks:200000000,LastPlayedDate:new Date().toISOString()})});
+  if(!saved.ok)throw new Error('Unable to seed resume scenario: '+saved.status);
+})()`)
+await send('Page.navigate', { url: base })
 await wait(`Boolean([...document.querySelectorAll('.section')].find(e=>e.querySelector('h2')?.textContent==='Continue Watching')?.querySelector('button'))`)
 await evaluate(`[...document.querySelectorAll('.section')].find(e=>e.querySelector('h2')?.textContent==='Continue Watching').querySelector('button').click()`)
 await click('button', 'Start over')
 await wait(`document.querySelector('video')?.readyState>=2`)
 await evaluate(`const v=document.querySelector('video');v.pause();v.currentTime=21;v.dispatchEvent(new Event('timeupdate'))`)
 await wait(`Boolean(document.querySelector('.up-next'))`)
+await evaluate(`[...document.querySelectorAll('.up-next button')].find(b=>b.textContent.includes('Play now')).focus()`)
 await pad(0)
 }
 await wait(`document.querySelector('.player-top h1')?.textContent.includes('S01E02')`)
