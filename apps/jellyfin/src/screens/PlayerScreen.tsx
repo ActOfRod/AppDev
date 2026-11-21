@@ -652,7 +652,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       <style>{`.player-video::cue { font-size: ${settings.subtitleSize}%; color: ${settings.subtitleColor}; background-color: ${settings.subtitleBackground ? 'rgba(0,0,0,0.75)' : 'transparent'}; text-shadow: ${settings.subtitleOutline ? '1px 1px 2px black, -1px -1px 2px black' : 'none'}; }`}</style>
       <div className={`player-top ${osdVisible ? 'is-visible' : ''}`}>
         <button type="button" className="ghost" onClick={onBack}>
-          ← Back
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m10 5 1.4 1.4L6.8 11H21v2H6.8l4.6 4.6L10 19l-7-7z" /></svg> Back
         </button>
         <div>
           <p className="brand">Now Playing</p>
@@ -941,10 +941,8 @@ function IconForward() {
 function IconCc() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.5 5.5h2.2c.7 0 1.1.2 1.1.8v.4H8.4v-.2H7.1v2.9h1.3v-.3h1.4v.5c0 .6-.5.9-1.2.9H6.5c-.8 0-1.3-.4-1.3-1.2v-2.6c0-.8.5-1.2 1.3-1.2zm7.2 0h2.2c.7 0 1.1.2 1.1.8v.4h-1.4v-.2h-1.3v2.9h1.3v-.3h1.4v.5c0 .6-.5.9-1.2.9h-2.1c-.8 0-1.3-.4-1.3-1.2v-2.6c0-.8.5-1.2 1.3-1.2z"
-      />
+      <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M10 10H8v4h2m7-4h-2v4h2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -954,7 +952,7 @@ function IconAudio() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="currentColor"
-        d="M12 3a5 5 0 0 0-5 5v2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2v2a5 5 0 0 0 10 0v-2h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-2V8a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v2H9V8zm0 8v2a3 3 0 0 0 6 0v-2H9z"
+        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
       />
     </svg>
   )
@@ -986,7 +984,7 @@ function IconFullscreen() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="currentColor"
-        d="M7 14H5v5h5v-2H7v-3zm12 3h-2v2h-3v2h5v-5zM7 7h2V5h3V3H5v5h2zm12-2h-5v2h3v3h2V5z"
+        d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zM5 14h2v3h3v2H5v-5zm12 0h2v5h-5v-2h3v-3z"
       />
     </svg>
   )
