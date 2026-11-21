@@ -1,12 +1,12 @@
 export type Preferences = {
   rows: string[]; hiddenRows: string[]; audioLanguage: string; subtitleLanguage: string
   subtitleMode: string; accent: string; idleMinutes: number; fullscreen: boolean
-  mergeNextUp: boolean
+  showOnNow: boolean; mergeNextUp: boolean
 }
-export const preferenceDefaults: Preferences = { rows: ['resume', 'next', 'latest', 'favorites'], hiddenRows: [], audioLanguage: '', subtitleLanguage: '', subtitleMode: 'default', accent: '#8b72ff', idleMinutes: 5, fullscreen: true, mergeNextUp: false }
+export const preferenceDefaults: Preferences = { rows: ['resume', 'next', 'latest', 'favorites'], hiddenRows: [], audioLanguage: '', subtitleLanguage: '', subtitleMode: 'default', accent: '#8b72ff', idleMinutes: 5, fullscreen: true, showOnNow: true, mergeNextUp: false }
 const validRow = (x: unknown): x is string => typeof x === 'string' && (preferenceDefaults.rows.includes(x) || /^latest:[a-f0-9-]+$/i.test(x))
 export function homeRowOrder(prefs: Preferences, libraries: { Id: string }[]) {
-  const latest = libraries.map((l) => `latest:${l.Id}`)
+  const latest = libraries.filter((l: { Id: string; CollectionType?: string }) => l.CollectionType?.toLowerCase() !== 'livetv').map((l) => `latest:${l.Id}`)
   const expanded = prefs.rows.flatMap((r) => r === 'latest' ? latest : [r]).filter((r) => !r.startsWith('latest:') || latest.includes(r))
   return [...new Set([...expanded, ...latest])]
 }
@@ -21,7 +21,7 @@ export function loadPreferences(): Preferences {
       subtitleMode: ['default', 'forced', 'off'].includes(p.subtitleMode) ? p.subtitleMode : 'default',
       idleMinutes: [0, 1, 5, 10, 15].includes(p.idleMinutes) ? p.idleMinutes : 5,
       fullscreen: typeof p.fullscreen === 'boolean' ? p.fullscreen : true,
-      mergeNextUp: typeof p.mergeNextUp === 'boolean' ? p.mergeNextUp : false }
+      showOnNow: typeof p.showOnNow === 'boolean' ? p.showOnNow : true, mergeNextUp: typeof p.mergeNextUp === 'boolean' ? p.mergeNextUp : false }
   } catch { return { ...preferenceDefaults } }
 }
 export function savePreferences(p: Preferences) {

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createPadReader } from '../lib/gamepad'
 
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 function isVisible(el: HTMLElement): boolean {
   if (!el.isConnected) return false
@@ -92,6 +92,7 @@ function findNeighbor(current: HTMLElement, direction: Direction): HTMLElement |
 }
 
 function moveFocus(direction: Direction) {
+  if (!window.dispatchEvent(new CustomEvent('valvefin:navigate', { detail: direction, cancelable: true }))) return
   const active = getActiveFocusable()
   if (!active) {
     focusFirstFocusable()

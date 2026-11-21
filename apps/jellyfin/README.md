@@ -11,8 +11,19 @@ Controller-first Jellyfin client for **Windows and Linux/SteamOS**, designed for
 - Capability-aware DirectPlay/remux/transcode, audio/subtitle selection, external text subtitles and bitmap burn-in. Windows HEVC support is probed at runtime and depends on OS/drivers.
 - Resume/start over, skip segments, next-episode countdown, trickplay, speed/quality, subtitle styling/delay and playback information. Segments/trickplay require server-generated data.
 - Music albums/artists/songs, background playback and queue.
+- Dedicated Live TV: Programs, virtualized Guide, Channels, Recordings, Schedule and Series; recording/series timers, live channel switching and an optional Home On Now row.
 - Manual login, LAN discovery, Quick Connect, multiple saved servers/users and avatars.
 - Persistent settings, idle backdrop slideshow, fullscreen/window state and playback sleep inhibition.
+
+## Live TV
+
+Open your Live TV library. LB/RB switch tabs; in the Guide, D-pad/stick moves across programs/channels and scrolls the time axis. Up from the first channel reaches the day picker. A plays an airing program/channel or opens future-program recording controls. B closes details before leaving Live TV. Schedule and Series let you cancel recordings.
+
+During live playback, LB/RB change channels; D-pad Up/Down also changes channels when the OSD is hidden. Other input reveals the OSD first; Start toggles pause, A activates the focused control, B reveals/exits and Y toggles fullscreen. The OSD shows current/next programs and broadcast progress, not an unsupported VOD seek range. Home On Now can be disabled in Settings.
+
+The local development fixture requires Docker Jellyfin at `127.0.0.1:8096`, the existing `devin` test account, ffmpeg and Docker bridge networking. Run `node --experimental-strip-types scripts/setup-livetv.mjs` and leave it running. It serves four looping HLS channels, logos, an M3U and XMLTV with series/movie/sports/kids/news and NEW flags for at least the next two days, on the private Docker bridge only. Ctrl+C stops the fixture processes. Files stay in `/home/ubuntu/jellyfin-test/livetv`.
+
+With the fixture running, use `node --experimental-strip-types scripts/check-livetv.mjs` for real API/DVR/HLS checks. The browser check, `node --experimental-strip-types scripts/check-livetv-browser.mjs`, expects Vite on 5173 and the existing Chrome CDP on 29229; it exercises virtual-pad navigation, real streaming/DVR and bounded/empty/error states, and writes screenshots to `/home/ubuntu/shots/livetv/`. DVR checks remove timers they create. Recordings are empty unless you have actually recorded content; no recordings are fabricated.
 
 ## Windows install
 

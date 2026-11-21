@@ -1,0 +1,26 @@
+.live-screen { min-width: 0; }
+.live-channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+.live-channel, .live-program-card { display: flex; flex-direction: column; gap: 10px; text-align: left; min-width: 250px; padding: 22px; border-radius: 14px; background: linear-gradient(140deg,#252238,#10141f); }
+.live-channel img { height: 100px; width: 100%; object-fit: contain; }
+.live-program-row { display: flex; gap: 20px; overflow-x: auto; padding: 12px 5px 20px; }
+.live-program-row > button { flex: 0 0 290px; }
+.live-screen progress, .live-channel progress, .live-player progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.live-new { font-size: 12px; font-weight: 800; color: #cabbff; letter-spacing: 1px; }
+.live-guide { border-radius: 12px; overflow: hidden; background: #10121f; }
+.live-guide:focus { outline: 3px solid var(--accent); outline-offset: 4px; }
+.guide-times { display: grid; grid-template-columns: 180px repeat(4,1fr); padding: 18px 0; background: #252438; }
+.guide-times span { padding-left: 12px; }
+.guide-row { display: flex; height: 82px; border-top: 1px solid #353147; }
+.guide-channel { width: 180px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; text-align: left; font-size: 14px; }
+.guide-channel img { width: 48px; height: 48px; object-fit: contain; }
+.guide-track { position: relative; flex: 1; min-width: 0; }
+.guide-program { position: absolute; height: 100%; border: 1px solid #353147; border-radius: 0; overflow: hidden; text-align: left; display: flex; flex-direction: column; justify-content: center; padding: 8px 15px; background: #1d1d2d; }
+.guide-program strong { white-space: nowrap; text-overflow: ellipsis; max-width: 100%; overflow: hidden; }
+.selected-row .guide-channel { background: #3d325d; }
+.selected-program { box-shadow: inset 0 0 0 3px var(--accent); background: #3d325d; }
+.guide-now { position: absolute; width: 2px; height: 100%; background: #ff647e; pointer-events: none; }
+.live-player { position: fixed; inset: 0; background: black; z-index: 20; }
+.live-player video { width: 100%; height: 100%; object-fit: contain; }
+.live-player-controls { position: absolute; inset: auto 0 0; padding: 70px 70px 45px; background: linear-gradient(transparent,rgba(0,0,0,.94) 30%); }
+.live-player-logo { width: 90px; height: 60px; object-fit: contain; }
+.live-player h1 { margin: 20px 0 8px; }
