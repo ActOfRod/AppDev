@@ -62,10 +62,16 @@ export function LauncherApp() {
 export function ServiceOverlay() {
   const state = useServiceState(), [error, setError] = useState(''), [confirm, setConfirm] = useState(false)
   const api = window.jellyfinDesktop?.services
-  useControllerNavigation(Boolean(state.overlay), { y: () => action('keyboard'), start: () => action('menu') })
+  useControllerNavigation(Boolean(state.overlay), { y: () => action('keyboard'), start: () => action('menu'), releaseFirst: true })
   const action = (value: ServiceAction) => { setError(''); void api?.action(value).catch((e) => setError(String(e))) }
   useEffect(() => { const back = () => { if (confirm) setConfirm(false); else action('dismiss') }; window.addEventListener('jellyfin:back', back); return () => window.removeEventListener('jellyfin:back', back) }, [confirm])
   useEffect(() => { document.documentElement.classList.add('service-overlay-document'); return () => document.documentElement.classList.remove('service-overlay-document') }, [])
   if (!state.overlay) return null
   return <div className="service-overlay"><section className="service-menu dialog" data-modal role="dialog" aria-label="Service menu"><p className="eyebrow">VALVEFIN</p><h2>{state.service?.name}</h2><p className="muted">Start / hold B · Menu · F10 with a keyboard</p>{confirm ? <><p>Sign out and clear all saved data for this service?</p><button className="primary" autoFocus onClick={() => { setConfirm(false); action('sign-out') }}>Clear service data</button><button className="ghost" onClick={() => setConfirm(false)}>Cancel</button></> : <><button className="primary" autoFocus onClick={() => action('dismiss')}>Continue</button>{([['home', 'Home / Launcher'], ['back', 'Back'], ['forward', 'Forward'], ['reload', 'Reload'], ['zoom-in', 'Zoom +'], ['zoom-out', 'Zoom −'], ['cursor', `Cursor: ${state.cursor ? 'on' : 'off'}`], ['keyboard', 'On-screen keyboard'], ['exit', 'Exit ValveFin']] as [ServiceAction, string][]).map(([value, label]) => <button className="ghost" key={value} disabled={value === 'forward' && !state.canForward} onClick={() => action(value)}>{label}</button>)}<button className="ghost" onClick={() => setConfirm(true)}>Sign out / clear service data</button><small>Zoom {Math.round(state.zoom * 100)}%</small></>}{error && <p className="error">{error}</p>}</section>{state.overlay === 'keyboard' && <KeyboardDialog label="Type into service" initial="" done={(text) => { void api?.type(text).catch((e) => setError(String(e))) }} close={() => action('dismiss')} />}</div>
+}
+
+export function ServiceHome() {
+  const api = window.jellyfinDesktop?.services
+  useEffect(() => { document.documentElement.classList.add('service-home-document'); return () => document.documentElement.classList.remove('service-home-document') }, [])
+  return <button className="service-home-pill" aria-label="ValveFin Home" onMouseEnter={() => void api?.homeHover(true)} onMouseLeave={() => void api?.homeHover(false)} onClick={() => void api?.action('home')}><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m12 3 10 9h-3v9h-5v-6h-4v6H5v-9H2z" /></svg>ValveFin Home</button>
 }

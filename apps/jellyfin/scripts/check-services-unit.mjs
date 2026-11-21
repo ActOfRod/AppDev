@@ -36,11 +36,26 @@ const root = { sender: window.webContents, senderFrame: window.webContents.mainF
 await assert.rejects(command({ sender: new Contents(), senderFrame: {} }, 'state'), /Unauthorized/)
 await assert.rejects(command({ ...root, senderFrame: {} }, 'state'), /Unauthorized/)
 focused = false; await assert.rejects(command(root, 'open', config), /Activate/); focused = true
-await manager.open(config); const view = views.at(-1), wc = view.webContents, store = stores.get('persist:svc-custom-local')
+await manager.open(config); const view = views.find((v) => v.options.webPreferences.session), wc = view.webContents, store = stores.get('persist:svc-custom-local')
 assert.equal(readyCount, 1); assert.equal(manager.snapshot().status, 'active'); assert.equal(view.options.webPreferences.nodeIntegration, false); assert.equal(view.options.webPreferences.disableHtmlFullscreenWindowResize, true)
 for (const permission of ['media', 'geolocation', 'camera', 'microphone', 'notifications']) { let granted; store.permission(wc, permission, (v) => granted = v); assert.equal(granted, false) }
 assert.equal(store.check(wc, 'mediaKeySystem'), true); assert.equal(store.device(), false)
 assert.ok(wc.ua.includes('Chrome/')); assert.ok(!wc.ua.includes('Electron'))
+const key = (contents, name, type = 'keyDown', extra = {}) => { let prevented = false; contents.emit('before-input-event', { preventDefault() { prevented = true } }, { key: name, type, ...extra }); return prevented }
+const home = views.find((v) => v.webContents.url.includes('service-home'))
+assert.equal(home.bounds.width, 140); assert.equal(home.bounds.height, 42); assert.equal(home.visible, true)
+await assert.rejects(manager.command('home-hover', 'bad'), /Invalid Home hover/)
+wc.emit('enter-html-full-screen'); assert.equal(home.visible, false)
+wc.emit('before-mouse-event', {}, { type: 'mouseMove', x: 400, y: 200 }); assert.equal(home.visible, true); wc.emit('leave-html-full-screen')
+assert.equal(key(wc, 'F10'), true); await Promise.resolve(); await Promise.resolve()
+assert.equal(manager.snapshot().overlay, 'menu')
+key(wc, 'F10', 'keyDown', { isAutoRepeat: true }); assert.equal(manager.snapshot().overlay, 'menu')
+const menu = views.find((v) => v.webContents.url.includes('service-overlay')).webContents
+key(menu, 'F10', 'keyUp'); await manager.command('dismiss')
+key(wc, 'Escape'); key(wc, 'Escape', 'keyUp'); assert.equal(manager.snapshot().overlay, undefined)
+key(wc, 'Escape'); await new Promise((r) => setTimeout(r, 1050)); assert.equal(manager.snapshot().overlay, 'menu')
+assert.equal(key(menu, 'Escape', 'keyDown', { isAutoRepeat: true }), true)
+assert.equal(manager.snapshot().overlay, 'menu'); key(menu, 'Escape', 'keyUp'); await manager.command('dismiss')
 const input = { sender: wc, senderFrame: wc.mainFrame }
 window.getContentBounds = () => ({ x: 0, y: 0 })
 manager.input(root, { action: 'key', key: 'Enter' }); assert.equal(wc.events.length, 0)
@@ -50,7 +65,7 @@ manager.input(input, { action: 'scroll', x: 0, y: 60 }); assert.equal(wc.events.
 manager.input(input, { action: 'pointer', x: 40, y: 50 }); manager.input(input, { action: 'activate' }); await Promise.resolve(); await Promise.resolve()
 assert.ok(wc.events.some((e) => e.type === 'mouseDown' && e.x === 40 && e.y === 50))
 wc.emit('enter-html-full-screen'); await manager.command('back'); assert.ok(wc.events.some((e) => e.keyCode === 'Escape')); wc.emit('leave-html-full-screen')
-await manager.command('menu'); assert.equal(manager.snapshot().overlay, 'menu'); assert.equal(children.length, 2)
+await manager.command('menu'); assert.equal(manager.snapshot().overlay, 'menu'); assert.equal(children.length, 3)
 await manager.command('type', 'typed'); assert.equal(wc.text, 'typed'); assert.equal(manager.snapshot().overlay, undefined)
 wc.emit('media-started-playing'); await manager.command('home'); assert.equal(wc.destroyed, true); assert.ok(stopped.includes(17)); assert.equal(children.length, 0)
 await manager.open(config); assert.equal(stores.size, 1); await manager.command('sign-out'); assert.equal(store.cleared, true)
@@ -60,4 +75,22 @@ await manager.command('exit'); assert.equal(quit, true)
 drmError = true; await manager.open(config); assert.equal(manager.snapshot().status, 'error'); assert.match(manager.snapshot().error, /DRM unavailable/); assert.equal(children.length, 0)
 drmError = false; await manager.open(config); assert.equal(manager.snapshot().status, 'active')
 await manager.open({ ...config, url: 'https://offline.test' }); assert.equal(manager.snapshot().status, 'error'); manager.close()
+for (const [name, extra] of [['BrowserBack', {}], ['ArrowLeft', { alt: true }], ['BrowserHome', {}]]) {
+  await manager.open(config)
+  const current = views.findLast((v) => v.options.webPreferences.session).webContents
+  focused = false; key(current, name, 'keyDown', extra); assert.equal(manager.snapshot().status, 'active'); focused = true
+  key(current, name, 'keyDown', extra); assert.equal(manager.snapshot().status, 'idle')
+}
+await manager.open(config)
+const historyContents = views.findLast((v) => v.options.webPreferences.session).webContents
+await historyContents.loadURL(config.url + '/next')
+key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt: true })
+assert.equal(historyContents.getURL(), config.url)
+assert.equal(manager.snapshot().status, 'active')
+key(historyContents, 'Alt', 'keyUp'); key(historyContents, 'ArrowLeft', 'keyUp', { alt: false })
+key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt: true })
+assert.equal(manager.snapshot().status, 'idle', 'Alt released before Left must not suppress the next Alt+Left Back')
+console.log('PASS Alt+Left history Back, Alt-up before Left-up, then Alt+Left returns to Launcher without a stuck held key')
+await manager.command('home-hover', false); manager.close()
+console.log('PASS service return fallbacks: repeat-safe F10, short/held Escape and focus transfer, BrowserBack/Alt+Left/BrowserHome, foreground gating, Home pill bounds/hover validation/fullscreen reveal and empty cleanup')
 console.log('PASS services: lifecycle/partition reuse, DRM readiness/failure/retry, empty close, invalid URLs/actions/text, trusted IPC and focus gating, camera/mic/location denial, desktop UA, input/cursor/scroll, HTML fullscreen Escape, overlay, OSK, sleep cleanup and offline errors')

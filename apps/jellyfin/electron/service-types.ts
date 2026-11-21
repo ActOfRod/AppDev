@@ -7,5 +7,6 @@ export type ServicesApi = {
   open: (service: LauncherService) => Promise<ServiceState>
   action: (action: ServiceAction) => Promise<ServiceState>
   type: (text: string) => Promise<ServiceState>
+  homeHover: (hovered: boolean) => Promise<ServiceState>
   subscribe: (callback: (state: ServiceState) => void) => () => void
 }

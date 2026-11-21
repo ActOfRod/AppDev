@@ -2,10 +2,12 @@
 /// <reference lib="dom.asynciterable" />
 import { ipcRenderer } from 'electron'
 import { createPadReader } from '../src/lib/gamepad'
+import { coalesceServicePads } from '../src/lib/serviceGamepad'
 import { startSteamOverlayRepaint } from '../src/lib/steamOverlayRepaint'
 import type { ServiceInput } from './service-types'
 
-let readPads = createPadReader(navigator.getGamepads?.() ?? [])
+function gamepads() { try { return coalesceServicePads(navigator.getGamepads?.() ?? []) } catch { return [] } }
+let readPads = createPadReader(gamepads())
 let seed = true, last = performance.now(), movingSince = 0
 const heldB = new Map<number, { since: number; opened: boolean }>()
 const repeats = new Map<string, number>()
@@ -14,7 +16,7 @@ ipcRenderer.on('services:reset', () => { seed = true; heldB.clear(); repeats.cle
 function poll(now: number) {
   requestAnimationFrame(poll)
   const dt = Math.min(0.04, (now - last) / 1000); last = now
-  const pads = navigator.getGamepads?.() ?? []
+  const pads = gamepads()
   if (seed) { readPads = createPadReader(pads); seed = false; return }
   let moving = false
   const connected = new Set<number>()
