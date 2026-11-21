@@ -70,6 +70,7 @@ h2 {
 .global-error { position: fixed; top: 1rem; right: 1rem; z-index: 40; max-width: 28rem; background: #291a25; border: 1px solid #ed829a; border-radius: 1rem; padding: 1rem; }
 .nav-rail { position: fixed; inset: 0 auto 0 0; width: 10rem; z-index: 20; padding: 1.5rem 0.7rem; background: rgba(11,15,26,0.96); border-right: 1px solid #ffffff12; display: flex; flex-direction: column; gap: 0.6rem; overflow-y: auto; }
 .nav-rail button { text-align: left; text-transform: capitalize; }
+.nav-section-label { margin: 0.6rem 0 0; padding-top: 1rem; border-top: 1px solid #ffffff20; color: var(--text-dim); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; }
 .nav-rail small { margin-top: auto; color: var(--text-dim); }
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem; margin: 1.1rem 0; }
 .toolbar input, .keyboard input { background: #101827; border: 1px solid #ffffff30; color: #fff; padding: 0.85rem; border-radius: 0.6rem; min-width: 15rem; }
