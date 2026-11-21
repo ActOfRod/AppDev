@@ -23,7 +23,7 @@ export const libraryDefaults: LibraryOptions = { sort: 'SortName', descending: f
 export function loadLibrary(id: string): LibraryOptions { try { return { ...libraryDefaults, ...JSON.parse(localStorage.getItem(`valvefin.library.${id}`) ?? '{}') } } catch { return { ...libraryDefaults } } }
 export function libraryQuery(id: string, o: LibraryOptions, start: number) {
   return { ParentId: id, SortBy: o.sort, SortOrder: o.descending ? 'Descending' : 'Ascending', StartIndex: start, Limit: 60,
-    IncludeItemTypes: 'Movie,Series,BoxSet,MusicAlbum', IsPlayed: o.unplayed ? 'false' : undefined, IsFavorite: o.favorite ? 'true' : undefined,
+    IncludeItemTypes: 'Movie,Series,BoxSet,MusicAlbum,Video,MusicVideo', IsPlayed: o.unplayed ? 'false' : undefined, IsFavorite: o.favorite ? 'true' : undefined,
     Genres: o.genre, Years: o.year, NameStartsWith: o.letter, MinWidth: o.resolution === '4K' ? 3800 : o.resolution === 'HD' ? 1280 : undefined,
     MaxWidth: o.resolution === 'SD' ? 1279 : undefined }
 }
