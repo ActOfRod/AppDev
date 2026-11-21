@@ -258,7 +258,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     showOsd(true)
   }
 
-  const attachStream = (playback: PlaybackSession, resumeSeconds?: number) => {
+  const attachStream = (playback: PlaybackSession, resumeSeconds?: number, resumePlayback = true) => {
     const video = videoRef.current
     if (!video) return
 
@@ -277,7 +277,8 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       if (startMs > 0) video.currentTime = startMs / 1000
       video.playbackRate = settingsRef.current.speed
       setSubtitleMode(playback.selectedSubtitleIndex)
-      void video.play().catch(() => undefined)
+      if (resumePlayback) void video.play().catch(() => undefined)
+      else { video.pause(); setPaused(true) }
     }
 
     if (isHls && Hls.isSupported()) {
@@ -301,6 +302,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     if (!video) return
     const revision = ++reloadRevision.current
     const resumeAt = video.currentTime
+    const resumePlayback = !video.paused
     setLoading(true)
     setError(null)
     setOpenMenu('none')
@@ -325,7 +327,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       setAudioTracks(playback.audioTracks)
       setActiveAudio(playback.selectedAudioIndex)
       setActiveSubtitle(playback.selectedSubtitleIndex)
-      attachStream(playback, resumeAt)
+      attachStream(playback, resumeAt, resumePlayback)
       setLoading(false)
       showOsd(true)
     } catch (err) {

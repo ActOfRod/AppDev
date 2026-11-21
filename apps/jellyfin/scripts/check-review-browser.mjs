@@ -12,6 +12,8 @@ const target = (await (await fetch('http://localhost:29229/json/list')).json()).
 const socket = new WebSocket(target.webSocketDebuggerUrl)
 await new Promise((r) => socket.addEventListener('open', r, { once: true }))
 const harness = `<html><body><div id="root"></div><script type="module">
+import RefreshRuntime from '/@react-refresh';
+RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;
 import React from '/node_modules/.vite/deps/react.js';
 import {createRoot} from '/node_modules/.vite/deps/react-dom_client.js';
 import '/src/styles.css';
@@ -110,6 +112,21 @@ try {
   assert.deepEqual(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Stopped')).map(r=>r.body.ItemId)`), tracks.map((t) => t.Id))
   assert.equal(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Playing')).length`), 2)
   console.log('PASS music periodic/pause/resume reports and natural two-track queue completion send one stop per track')
+  await evaluate(`window.setInterval=window.reviewSetInterval;await window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewMovie,onBack:()=>{},onNext:()=>{},startPositionTicks:120000000})`)
+  await wait(`document.querySelector('video')?.readyState>=2 && !document.querySelector('video').paused && document.querySelector('video').currentTime>=12`)
+  assert.equal(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Stopped')&&window.reviewTracks.some(t=>t.Id===r.body.ItemId)).length`), 2)
+  await evaluate(`document.querySelector('video').pause();window.reviewMetadata=0;document.querySelector('video').addEventListener('loadedmetadata',()=>window.reviewMetadata++)`)
+  await click('Quality')
+  await click('2 Mbps')
+  await wait('window.reviewMetadata>0')
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true)
+  assert.ok(await evaluate(`document.querySelector('video').currentTime>=12 && document.querySelector('video').currentTime<14`))
+  await evaluate(`await document.querySelector('video').play();window.reviewMetadata=0`)
+  await click('Quality')
+  await click('4 Mbps')
+  await wait('window.reviewMetadata>0')
+  assert.equal(await evaluate(`document.querySelector('video').paused`), false)
+  console.log('PASS quality reload preserves paused/playing state and position; completed music does not double-stop on unmount')
 } finally {
   if (savedStorage) await evaluate(`localStorage.clear();for(const[k,v]of Object.entries(${savedStorage}))localStorage.setItem(k,v)`)
   await send('Fetch.disable')
