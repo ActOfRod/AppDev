@@ -26,10 +26,28 @@ let main = await connect(9233), renderer = await connect(9232)
 const req = `process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')`
 const win = `${req}.BrowserWindow.getAllWindows()[0]`
 const statePath = await main.eval(`${req}.app.getPath('userData') + '/desktop-state.json'`)
+async function settledBounds() {
+  let previous, since = Date.now()
+  for (let i = 0; i < 80; i++) {
+    const bounds = await main.eval(`${win}.getNormalBounds()`)
+    if (JSON.stringify(bounds) !== JSON.stringify(previous)) { previous = bounds; since = Date.now() }
+    else if (Date.now() - since >= 400) return bounds
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw Error('Window bounds did not settle')
+}
+async function rendererReady() {
+  for (let i = 0; i < 100; i++) {
+    try { if (await renderer.eval(`location.origin==='http://localhost:5173' && document.readyState==='complete' && Boolean(window.jellyfinDesktop)`)) return } catch { /* navigation */ }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw Error('Electron renderer did not finish loading Vite')
+}
+await rendererReady()
 if (process.env.RESUME_ELECTRON === 'restore') {
   const saved = JSON.parse(await readFile(statePath))
   assert.equal(await main.eval(`${win}.isFullScreen()`), false)
-  assert.deepEqual(await main.eval(`${win}.getNormalBounds()`), saved.bounds)
+  assert.deepEqual(await settledBounds(), saved.bounds)
   console.log('PASS real close/relaunch restores window bounds and launch-fullscreen Off')
   await renderer.eval(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.loadPreferences(),fullscreen:true})})()`)
   main.close(); renderer.close()
@@ -61,7 +79,7 @@ console.log('PASS second Electron launch exits with existing single window retai
 await main.eval(`${win}.setFullScreen(false)`)
 await new Promise((r) => setTimeout(r, 500))
 await main.eval(`${win}.setBounds({x:40,y:40,width:1400,height:800})`)
-const normal = await main.eval(`${win}.getNormalBounds()`)
+const normal = await settledBounds()
 await main.eval(`setTimeout(()=>${req}.app.quit(),100);true`)
 main.close(); renderer.close()
 await new Promise((r) => setTimeout(r, 700))
@@ -71,9 +89,9 @@ restarted.unref()
 main = await connect(9233); renderer = await connect(9232)
 for (let i = 0; i < 80; i++) { if (await main.eval(`${req}.BrowserWindow.getAllWindows().length`)) break; await new Promise((r) => setTimeout(r, 100)) }
 assert.equal(await main.eval(`${win}.isFullScreen()`), false)
-assert.deepEqual(await main.eval(`${win}.getNormalBounds()`), normal)
+assert.deepEqual(await settledBounds(), normal)
 console.log('PASS real close/relaunch restores window bounds and launch-fullscreen Off')
-for (let i = 0; i < 80; i++) { if (await renderer.eval(`Boolean(window.jellyfinDesktop)`)) break; await new Promise((r) => setTimeout(r, 100)) }
+await rendererReady()
 await renderer.eval(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.loadPreferences(),fullscreen:true})})()`)
 await main.eval(`${win}.setFullScreen(true)`)
 main.close(); renderer.close()
