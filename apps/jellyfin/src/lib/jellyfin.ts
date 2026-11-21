@@ -49,6 +49,8 @@ export type JellyfinItem = {
   Trickplay?: Record<string, Record<string, TrickplayInfo>>
   Taglines?: string[]
   Genres?: string[]
+  Studios?: { Name: string; Id?: string }[]
+  ProviderIds?: Record<string, string>
   People?: { Id: string; Name: string; Type: string; Role?: string; PrimaryImageTag?: string }[]
   Chapters?: { Name: string; StartPositionTicks: number; ImageTag?: string }[]
   RemoteTrailers?: { Url: string; Name?: string }[]
@@ -459,7 +461,7 @@ export function isSeasonItem(item: JellyfinItem): boolean {
 
 export async function getItem(session: JellyfinSession, itemId: string): Promise<JellyfinItem> {
   const params = new URLSearchParams({
-    Fields: 'Overview,ProductionYear,CommunityRating,OfficialRating,MediaSources,MediaStreams,People,RecursiveItemCount,Trickplay,Genres,Taglines,Chapters,RemoteTrailers,ParentId',
+    Fields: 'Overview,ProductionYear,CommunityRating,OfficialRating,MediaSources,MediaStreams,People,RecursiveItemCount,Trickplay,Genres,Taglines,Chapters,RemoteTrailers,ParentId,Studios,ProviderIds,SeriesPrimaryImage',
   })
   return jellyfinFetch<JellyfinItem>(
     session.serverUrl,

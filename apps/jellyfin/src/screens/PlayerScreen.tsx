@@ -30,9 +30,10 @@ type PlayerScreenProps = {
   onNext: (item: JellyfinItem) => void
   startPositionTicks?: number
   mediaSourceId?: string
+  initialTracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>
 }
 
-export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks, mediaSourceId }: PlayerScreenProps) {
+export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks, mediaSourceId, initialTracks }: PlayerScreenProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const playbackRef = useRef<PlaybackSession | null>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -369,7 +370,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       setLoading(true)
       setError(null)
       try {
-        const playback = await createPlaybackSession(session, item, { startPositionTicks, mediaSourceId, maxBitrate: settingsRef.current.maxBitrate, maxHeight: settingsRef.current.maxHeight })
+        const playback = await createPlaybackSession(session, item, { startPositionTicks, mediaSourceId, ...initialTracks, maxBitrate: settingsRef.current.maxBitrate, maxHeight: settingsRef.current.maxHeight })
         if (cancelled) return
         playbackRef.current = playback
         setPlaybackInfo(playback)
