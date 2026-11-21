@@ -26,6 +26,7 @@ export type JellyfinItem = {
   }
   BackdropImageTags?: string[]
   UserData?: {
+    LastPlayedDate?: string
     PlaybackPositionTicks?: number
     PlayedPercentage?: number
     UnplayedItemCount?: number

@@ -4,6 +4,7 @@ import { getResumeItems, getViews, itemImageUrl, type JellyfinItem, type Jellyfi
 import { nextItems, queryItems } from '../lib/catalog'
 import { homeRowOrder, loadPreferences } from '../lib/preferences'
 import { useScreenMemory } from '../hooks/useScreenMemory'
+import { watchingRows } from '../lib/homeRows'
 
 export function HomeScreen({ session, open, resume, play }: { session: JellyfinSession; open: (i: JellyfinItem) => void; resume: (i: JellyfinItem) => void; play: (i: JellyfinItem) => void }) {
   useScreenMemory('home')
@@ -13,6 +14,11 @@ export function HomeScreen({ session, open, resume, play }: { session: JellyfinS
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const prefs = loadPreferences()
+  const watching = watchingRows(rows.resume?.items ?? [], rows.next?.items ?? [], prefs.mergeNextUp)
+  const displayRows = { ...rows,
+    ...(rows.resume || (prefs.mergeNextUp && rows.next) ? { resume: { ...rows.resume, name: 'Continue Watching', items: watching.resume, error: rows.resume?.error || (prefs.mergeNextUp ? rows.next?.error : undefined) } } : {}),
+    ...(rows.next ? { next: { ...rows.next, items: watching.next } } : {}),
+  }
   useEffect(() => {
     let active = true
     const load = async (id: string, name: string, request: Promise<JellyfinItem[]>) => {
@@ -32,6 +38,6 @@ export function HomeScreen({ session, open, resume, play }: { session: JellyfinS
   const logo = hero?.ImageTags?.Logo ? itemImageUrl(session, hero, { type: 'Logo', maxWidth: 700 }) : null
   return <main className="app-shell home-screen">
     {hero ? <section className="featured" aria-label="Featured" style={backdrop ? { backgroundImage: `url("${backdrop}")` } : undefined} onFocusCapture={() => setPaused(true)} onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false) }}><div className="featured-copy"><p className="brand">Featured · {index + 1} / {featured.length}</p>{logo ? <img className="title-logo" src={logo} alt={hero.Name} /> : <h1>{hero.Name}</h1>}<p className="detail-overview">{hero.Overview || 'Your next great watch starts here.'}</p><div className="toolbar"><button className="primary" onClick={() => play(hero)}>Play</button><button className="ghost" onClick={() => open(hero)}>Details</button><button className="ghost" aria-label="Previous featured" onClick={() => setIndex((index + featured.length - 1) % featured.length)}>‹</button><button className="ghost" aria-label="Next featured" onClick={() => setIndex((index + 1) % featured.length)}>›</button></div></div></section> : <h1>Welcome back, {session.userName}</h1>}
-    {homeRowOrder(prefs, libraries).filter((key) => !prefs.hiddenRows.includes(key) && !(key.startsWith('latest:') && prefs.hiddenRows.includes('latest'))).map((key) => rows[key] && <div key={key}><Row title={rows[key].name} items={rows[key].items} session={session} open={key === 'resume' ? resume : open} />{rows[key].error && <p className="error">{rows[key].error}</p>}</div>)}
+    {homeRowOrder(prefs, libraries).filter((key) => !(key === 'next' && prefs.mergeNextUp) && !prefs.hiddenRows.includes(key) && !(key.startsWith('latest:') && prefs.hiddenRows.includes('latest'))).map((key) => displayRows[key] && <div key={key}><Row title={displayRows[key].name} items={displayRows[key].items} session={session} open={key === 'resume' ? (item) => item.UserData?.PlaybackPositionTicks ? resume(item) : play(item) : open} />{displayRows[key].error && <p className="error">{displayRows[key].error}</p>}</div>)}
   </main>
 }
