@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPadReader } from '../lib/gamepad'
+import { coalesceServicePads } from '../lib/serviceGamepad'
 
 const FOCUSABLE =
   'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -135,7 +136,7 @@ async function toggleFullscreen() {
  * Keyboard arrows work as a fallback; gamepad D-pad / left stick move focus.
  * A / South activates; B / East goes back; Y / North toggles fullscreen.
  */
-export function useControllerNavigation(enabled: boolean, actions?: { y?: () => void; start?: () => void }) {
+export function useControllerNavigation(enabled: boolean, actions?: { y?: () => void; start?: () => void; releaseFirst?: boolean }) {
   const stickCooldown = useRef(0)
   const actionsRef = useRef(actions)
   actionsRef.current = actions
@@ -146,7 +147,9 @@ export function useControllerNavigation(enabled: boolean, actions?: { y?: () => 
     }
 
     // Avoid phantom presses from buttons still held after leaving the player.
-    const readPads = createPadReader(navigator.getGamepads?.() ?? [])
+    const pads = () => actionsRef.current?.releaseFirst ? coalesceServicePads(navigator.getGamepads?.() ?? []) : navigator.getGamepads?.() ?? []
+    const readPads = createPadReader(pads())
+    let armed = !actionsRef.current?.releaseFirst
     // Recover focus if the previous screen left a detached activeElement.
     if (!getActiveFocusable()) {
       // Wait a frame so the new screen's autoFocus/layout can settle.
@@ -202,8 +205,15 @@ export function useControllerNavigation(enabled: boolean, actions?: { y?: () => 
     let frame = 0
     const poll = () => {
       frame = requestAnimationFrame(poll)
+      const current = pads()
+      if (actionsRef.current?.releaseFirst && !document.hasFocus()) { armed = false; return }
+      if (!armed) {
+        readPads(current)
+        if (current.some((pad) => pad?.connected) && !current.some((pad) => pad?.buttons.some((button) => button.pressed || button.value > 0.5))) armed = true
+        return
+      }
       const handledButtons = new Set<number>()
-      for (const input of readPads(navigator.getGamepads?.() ?? [])) {
+      for (const input of readPads(current)) {
       const pad = input.pad
 
       const now = performance.now()

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('jellyfinDesktop', {
     open: (service: LauncherService) => ipcRenderer.invoke('services:command', 'open', service),
     action: (action: ServiceAction) => ipcRenderer.invoke('services:command', action),
     type: (value: string) => ipcRenderer.invoke('services:command', 'type', value),
+    homeHover: (hovered: boolean) => ipcRenderer.invoke('services:command', 'home-hover', hovered),
     subscribe: (callback: (state: ServiceState) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: ServiceState) => callback(state)
       ipcRenderer.on('services:state', listener)

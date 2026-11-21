@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { LauncherApp, ServiceOverlay } from './components/Launcher'
+import { LauncherApp, ServiceHome, ServiceOverlay } from './components/Launcher'
 import { SteamOverlayRepaint } from './components/SteamOverlayRepaint'
 import { WindowsWindowControls } from './components/WindowsWindowControls'
 import { UpdatesProvider } from './components/Updates'
@@ -8,6 +8,6 @@ import { UpdatesProvider } from './components/Updates'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <SteamOverlayRepaint />
-    {new URLSearchParams(location.search).has('service-overlay') ? <ServiceOverlay /> : <><WindowsWindowControls /><UpdatesProvider><LauncherApp /></UpdatesProvider></>}
+    {new URLSearchParams(location.search).has('service-home') ? <ServiceHome /> : new URLSearchParams(location.search).has('service-overlay') ? <ServiceOverlay /> : <><WindowsWindowControls /><UpdatesProvider><LauncherApp /></UpdatesProvider></>}
   </StrictMode>,
 )

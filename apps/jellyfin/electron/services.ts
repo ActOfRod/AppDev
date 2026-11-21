@@ -15,6 +15,12 @@ export function validateService(value: unknown): LauncherService {
 export class Services {
   private view?: WebContentsView
   private overlay?: WebContentsView
+  private home?: WebContentsView
+  private homeReady = false
+  private homeTimer?: ReturnType<typeof setTimeout>
+  private escapeTimer?: ReturnType<typeof setTimeout>
+  private escapeHeld = false
+  private returnKeys = new Set<string>()
   private generation = 0
   private blocker: number | null = null
   private point = { x: 300, y: 300 }
@@ -35,15 +41,17 @@ export class Services {
     return this.snapshot()
   }
   trusted(event: IpcMainInvokeEvent) {
-    if (event.senderFrame !== event.sender.mainFrame || ![this.window.webContents, this.overlay?.webContents].includes(event.sender)) return false
+    if (event.senderFrame !== event.sender.mainFrame || ![this.window.webContents, this.overlay?.webContents, this.home?.webContents].includes(event.sender)) return false
     try { const actual = new URL(event.senderFrame.url), expected = new URL(this.uiUrl); return actual.origin === expected.origin && actual.pathname === expected.pathname } catch { return false }
   }
   private stopBlocker() { if (this.blocker !== null) { powerSaveBlocker.stop(this.blocker); this.blocker = null } }
   close(notify = true) {
     this.generation++
+    clearTimeout(this.homeTimer); clearTimeout(this.escapeTimer)
+    this.escapeHeld = false; this.returnKeys.clear(); this.homeReady = false
     this.stopBlocker()
-    for (const view of [this.overlay, this.view]) if (view) { if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close() }
-    this.overlay = undefined; this.view = undefined; this.htmlFullscreen = false; this.virtual = false; this.physical = false
+    for (const view of [this.overlay, this.home, this.view]) if (view) { if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close() }
+    this.overlay = undefined; this.home = undefined; this.view = undefined; this.htmlFullscreen = false; this.virtual = false; this.physical = false
     this.state = { status: 'idle', cursor: true, zoom: 1, canBack: false, canForward: false }
     if (notify) { this.publish(); if (this.window.isFocused()) this.window.webContents.focus() }
   }
@@ -77,15 +85,23 @@ export class Services {
       wc.on('will-redirect', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault() })
       wc.on('did-navigate', () => this.publish()); wc.on('did-navigate-in-page', () => this.publish())
       wc.on('did-finish-load', () => { this.virtual = false; this.publish() })
-      wc.on('enter-html-full-screen', () => { this.htmlFullscreen = true })
+      wc.on('enter-html-full-screen', () => { this.htmlFullscreen = true; this.hideHome() })
       wc.on('leave-html-full-screen', () => { this.htmlFullscreen = false })
       wc.on('media-started-playing', () => { if (this.blocker === null) this.blocker = powerSaveBlocker.start('prevent-display-sleep') })
       wc.on('media-paused', () => this.stopBlocker())
       wc.on('render-process-gone', () => this.fail(Error('The service renderer stopped'), generation))
-      wc.on('before-input-event', (event, input) => { if (input.type === 'keyDown' && input.key === 'F10') { event.preventDefault(); void this.command('menu') } })
+      wc.on('before-input-event', (event, input) => this.returnKey(event, input, true))
+      wc.on('blur', () => { clearTimeout(this.escapeTimer); if (!this.state.overlay) { this.escapeHeld = false; this.returnKeys.clear() } })
+      wc.on('before-mouse-event', (_event, input) => { if (input.type === 'mouseMove' && (input.y <= 24 || this.htmlFullscreen)) this.showHome() })
       this.state.status = 'loading'; this.publish()
       await wc.loadURL(service.url)
-      if (generation === this.generation) { this.startUrl = wc.getURL(); this.state.status = 'active'; this.publish(); if (this.window.isFocused()) wc.focus() }
+      if (generation === this.generation) {
+        this.startUrl = wc.getURL()
+        await this.prepareHome(generation)
+        if (generation !== this.generation) return this.snapshot()
+        this.state.status = 'active'; this.publish(); if (this.window.isFocused()) wc.focus()
+        this.showHome(4000)
+      }
     } catch (error) { this.fail(error, generation) }
     finally { clearTimeout(timeout) }
     return this.snapshot()
@@ -95,6 +111,7 @@ export class Services {
     const [width, height] = this.window.getContentSize()
     const top = process.platform === 'win32' && !this.fullscreen() ? 36 : 0
     for (const view of [this.view, this.overlay]) view?.setBounds({ x: 0, y: top, width, height: height - top })
+    this.home?.setBounds({ x: Math.max(0, Math.round((width - 140) / 2)), y: top + 8, width: Math.min(140, width), height: 42 })
     this.point.x = Math.max(0, Math.min(width - 1, this.point.x)); this.point.y = Math.max(0, Math.min(height - top - 1, this.point.y))
   }
   private key(keyCode: string) {
@@ -106,9 +123,51 @@ export class Services {
     wc.sendInputEvent({ type: 'keyUp', keyCode: nativeKey })
   }
   private position() { return { x: Math.round(this.point.x), y: Math.round(this.point.y) } }
+  private returnKey(event: Electron.Event, input: Electron.Input, service: boolean) {
+    if (!this.window.isFocused()) return
+    const escape = input.key === 'Escape', back = input.key === 'BrowserBack' || (input.alt && input.key === 'ArrowLeft')
+    if (!escape && !back && input.key !== 'BrowserHome' && input.key !== 'F10') return
+    if (input.type === 'keyUp') {
+      this.returnKeys.delete(input.key)
+      if (escape) { if (this.escapeHeld) event.preventDefault(); this.escapeHeld = false; clearTimeout(this.escapeTimer) }
+      return
+    }
+    if (input.type !== 'keyDown') return
+    if (input.isAutoRepeat || this.returnKeys.has(input.key)) { event.preventDefault(); return }
+    this.returnKeys.add(input.key)
+    if (escape) {
+      if (!service) return
+      this.escapeHeld = true
+      const generation = this.generation
+      this.escapeTimer = setTimeout(() => { if (this.window.isFocused() && this.view && !this.state.overlay) void this.command('menu').catch((error) => this.fail(error, generation)) }, 1000)
+      return
+    }
+    event.preventDefault()
+    const generation = this.generation
+    void this.command(input.key === 'BrowserHome' ? 'home' : back ? 'back' : 'menu').catch((error) => this.fail(error, generation))
+  }
+  private async prepareHome(generation: number) {
+    const home = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false, ...(process.platform === 'win32' ? { backgroundThrottling: false } : {}) } })
+    this.home = home; home.setVisible(false); home.setBackgroundColor('#00000000')
+    this.window.contentView.addChildView(home); this.resize()
+    home.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    home.webContents.on('will-navigate', (event) => event.preventDefault())
+    home.webContents.on('before-input-event', (event, input) => this.returnKey(event, input, false))
+    const url = new URL(this.uiUrl); url.searchParams.set('service-home', '1')
+    await home.webContents.loadURL(url.href)
+    if (generation === this.generation) this.homeReady = true
+  }
+  private hideHome() { clearTimeout(this.homeTimer); this.home?.setVisible(false) }
+  private showHome(duration = 2500) {
+    if (!this.homeReady || this.state.overlay || !this.window.isFocused()) return
+    clearTimeout(this.homeTimer); this.home?.setVisible(true)
+    this.homeTimer = setTimeout(() => this.home?.setVisible(false), duration)
+  }
   private async showOverlay(mode: 'menu' | 'keyboard') {
     if (!this.view) return
+    const generation = this.generation
     this.state.overlay = this.state.overlay === mode ? undefined : mode
+    this.hideHome()
     if (!this.state.overlay) return this.hideOverlay()
     if (!this.overlay) {
       this.overlay = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false, ...(process.platform === 'win32' ? { backgroundThrottling: false } : {}) } })
@@ -116,9 +175,11 @@ export class Services {
       this.window.contentView.addChildView(this.overlay); this.resize()
       this.overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       this.overlay.webContents.on('will-navigate', (event) => event.preventDefault())
+      this.overlay.webContents.on('before-input-event', (event, input) => this.returnKey(event, input, false))
       const url = new URL(this.uiUrl); url.searchParams.set('service-overlay', '1')
       await this.overlay.webContents.loadURL(url.href)
     }
+    if (generation !== this.generation || !this.overlay || !this.state.overlay) return
     this.overlay.setVisible(true); this.publish()
     if (this.window.isFocused()) this.overlay.webContents.focus()
   }
@@ -128,6 +189,7 @@ export class Services {
   }
   async command(action: unknown, text?: unknown) {
     if (action === 'home') { this.close(); return this.snapshot() }
+    if (action === 'home-hover') { if (typeof text !== 'boolean') throw Error('Invalid Home hover'); if (text) clearTimeout(this.homeTimer); else this.showHome(700); return this.snapshot() }
     if (action !== 'type' && (typeof action !== 'string' || !actions.has(action as ServiceAction))) throw Error('Invalid service action')
     if (!this.view) return this.snapshot()
     const wc = this.view.webContents
@@ -165,7 +227,7 @@ export class Services {
         wc.sendInputEvent({ type: 'mouseDown', ...this.position(), button: 'left', clickCount: 1 }); wc.sendInputEvent({ type: 'mouseUp', ...this.position(), button: 'left', clickCount: 1 })
       })().catch(() => undefined)
     } else if (value.action === 'key' && allowedKeys.has(value.key)) this.key(value.key)
-    else if (value.action === 'back' || value.action === 'menu' || value.action === 'keyboard') void this.command(value.action).catch((e) => this.fail(e, this.generation))
+    else if (value.action === 'back' || value.action === 'menu' || value.action === 'keyboard') { const generation = this.generation; void this.command(value.action).catch((e) => this.fail(e, generation)) }
     else if (value.action === 'move' || value.action === 'scroll' || value.action === 'pointer') {
       if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) return
       if (value.action === 'pointer') {
