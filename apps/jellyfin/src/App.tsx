@@ -24,7 +24,7 @@ import './liveTv.css'
 type BrowseView = { screen: 'home' | 'search' | 'favorites' | 'settings' | 'music' } | { screen: 'library'; library: JellyfinItem; returnTo?: BrowseView } | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
 type View = BrowseView | { screen: 'live'; item: LiveItem; channels: LiveItem[]; returnTo: BrowseView } | { screen: 'login' } | { screen: 'player'; item: JellyfinItem; start?: number; source?: string; tracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>; returnTo: BrowseView }
 
-export default function App() {
+export default function App({ launcher }: { launcher?: () => void } = {}) {
   const [session, setSession] = useState(loadSession)
   const [view, setView] = useState<View>(() => loadSession() ? { screen: 'home' } : { screen: 'login' })
   const [libraries, setLibraries] = useState<JellyfinItem[]>([])
@@ -101,6 +101,7 @@ export default function App() {
     {session && <MusicPlayer key={session.userId + session.serverUrl} session={session} queue={queue} setQueue={setQueue} suspended={view.screen === 'player' || view.screen === 'live'} />}
     {session && <Screensaver session={session} disabled={view.screen === 'player' || view.screen === 'live' || !!context} minutes={prefs.idleMinutes} />}
     {context && session && <div className="modal-shade"><section className="dialog" role="dialog" data-modal aria-label="Title actions"><h2>{context.Name}</h2><div className="context-actions"><button className="primary" autoFocus onClick={() => void play(context)}>Play / open</button><button className="ghost" onClick={async () => { try { await setPlayed(session, context, !context.UserData?.Played); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.Played ? 'Mark unwatched' : 'Mark watched'}</button><button className="ghost" onClick={async () => { try { await setFavorite(session, context, !context.UserData?.IsFavorite); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.IsFavorite ? 'Remove favorite' : 'Favorite'}</button>{context.SeriesId && <button className="ghost" onClick={async () => { try { const i = await getItem(session, context.SeriesId!); setContext(null); open(i) } catch (e) { setMessage(String(e)) } }}>Go to series</button>}<button className="ghost" onClick={() => { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()) }}>Close · B</button></div>{message && <p className="error">{message}</p>}</section></div>}
+    {launcher && view.screen !== 'player' && view.screen !== 'live' && <button className="ghost launcher-return" onClick={launcher}>Launcher</button>}
     <UpdateNotice suppressed={view.screen === 'player' || view.screen === 'live'} />
   </>
 }
