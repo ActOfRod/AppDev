@@ -81,6 +81,16 @@ for (const [name, extra] of [['BrowserBack', {}], ['ArrowLeft', { alt: true }], 
   focused = false; key(current, name, 'keyDown', extra); assert.equal(manager.snapshot().status, 'active'); focused = true
   key(current, name, 'keyDown', extra); assert.equal(manager.snapshot().status, 'idle')
 }
+await manager.open(config)
+const historyContents = views.findLast((v) => v.options.webPreferences.session).webContents
+await historyContents.loadURL(config.url + '/next')
+key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt: true })
+assert.equal(historyContents.getURL(), config.url)
+assert.equal(manager.snapshot().status, 'active')
+key(historyContents, 'Alt', 'keyUp'); key(historyContents, 'ArrowLeft', 'keyUp', { alt: false })
+key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt: true })
+assert.equal(manager.snapshot().status, 'idle', 'Alt released before Left must not suppress the next Alt+Left Back')
+console.log('PASS Alt+Left history Back, Alt-up before Left-up, then Alt+Left returns to Launcher without a stuck held key')
 await manager.command('home-hover', false); manager.close()
 console.log('PASS service return fallbacks: repeat-safe F10, short/held Escape and focus transfer, BrowserBack/Alt+Left/BrowserHome, foreground gating, Home pill bounds/hover validation/fullscreen reveal and empty cleanup')
 console.log('PASS services: lifecycle/partition reuse, DRM readiness/failure/retry, empty close, invalid URLs/actions/text, trusted IPC and focus gating, camera/mic/location denial, desktop UA, input/cursor/scroll, HTML fullscreen Escape, overlay, OSK, sleep cleanup and offline errors')

@@ -125,13 +125,14 @@ export class Services {
   private position() { return { x: Math.round(this.point.x), y: Math.round(this.point.y) } }
   private returnKey(event: Electron.Event, input: Electron.Input, service: boolean) {
     if (!this.window.isFocused()) return
-    const escape = input.key === 'Escape', back = input.key === 'BrowserBack' || (input.alt && input.key === 'ArrowLeft')
-    if (!escape && !back && input.key !== 'BrowserHome' && input.key !== 'F10') return
+    const escape = input.key === 'Escape'
     if (input.type === 'keyUp') {
       this.returnKeys.delete(input.key)
       if (escape) { if (this.escapeHeld) event.preventDefault(); this.escapeHeld = false; clearTimeout(this.escapeTimer) }
       return
     }
+    const back = input.key === 'BrowserBack' || (input.alt && input.key === 'ArrowLeft')
+    if (!escape && !back && input.key !== 'BrowserHome' && input.key !== 'F10') return
     if (input.type !== 'keyDown') return
     if (input.isAutoRepeat || this.returnKeys.has(input.key)) { event.preventDefault(); return }
     this.returnKeys.add(input.key)
