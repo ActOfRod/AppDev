@@ -7,7 +7,7 @@ import { formatClockTime, formatRuntime, getEpisodes, getItem, getNextUp, getSea
 
 type Props = { session: JellyfinSession; item: JellyfinItem; onBack: () => void; onOpenItem: (i: JellyfinItem) => void; onPlay: (i: JellyfinItem, start?: number, source?: string, tracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>) => void; onSignOut: () => void }
 export function DetailScreen({ session, item: initial, onBack, onOpenItem, onPlay }: Props) {
-  useScreenMemory(`detail:${initial.Id}`)
+  useScreenMemory(`detail:${initial.Id}`, '.detail-shell [data-focus-key="play"], .detail-shell [data-focus-key="play-series"]')
   const [fetched, setFetched] = useState(initial)
   const item = useLiveItem(fetched)
   const [children, setChildren] = useState<JellyfinItem[]>([])
@@ -25,7 +25,6 @@ export function DetailScreen({ session, item: initial, onBack, onOpenItem, onPla
   const [trackMenu, setTrackMenu] = useState<'audio' | 'subtitle' | null>(null)
   const trackFocus = useRef<HTMLButtonElement | null>(null)
   const closeTracks = () => { setTrackMenu(null); requestAnimationFrame(() => trackFocus.current?.focus()) }
-  useEffect(() => { window.scrollTo(0, 0); document.querySelector<HTMLElement>('.detail-shell [data-focus-key="play"], .detail-shell [data-focus-key="play-series"]')?.focus({ preventScroll: true }) }, [initial.Id])
   useEffect(() => { setAudioSelection(''); setSubtitleSelection('') }, [source])
   useEffect(() => {
     if (!trackMenu) return

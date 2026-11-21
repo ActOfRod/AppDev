@@ -3,12 +3,13 @@ import { useLayoutEffect } from 'react'
 type Memory = { focus: string | null; group: string | null; x: number; y: number; rails: number[] }
 const memories = new Map<string, Memory>()
 
-export function useScreenMemory(key: string) {
+export function useScreenMemory(key: string, initialFocus?: string) {
   useLayoutEffect(() => {
     const memory = memories.get(key)
     if (!memory) {
       window.scrollTo(0, 0)
-      document.querySelector<HTMLElement>('main:not(.home-screen) button')?.focus({ preventScroll: true })
+      const target = (initialFocus ? document.querySelector<HTMLElement>(initialFocus) : null) ?? document.querySelector<HTMLElement>('main:not(.home-screen) button')
+      target?.focus({ preventScroll: true })
     }
     let restored = false
     const restore = () => {
@@ -42,5 +43,5 @@ export function useScreenMemory(key: string) {
       document.removeEventListener('focusin', save)
       window.removeEventListener('scroll', save, true)
     }
-  }, [key])
+  }, [key, initialFocus])
 }
