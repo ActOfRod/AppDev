@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell } from 'electron'
 import path from 'node:path'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
@@ -38,6 +38,14 @@ function initializeUpdates() {
     : process.platform === 'win32' && existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall ValveFin.exe')) ? 'nsis' : 'manual'
   updates = new ClientUpdates({ version: app.getVersion(), mode, target: process.env.APPIMAGE,
     directory: path.join(app.getPath('userData'), 'updates'),
+    runningInstallers: process.platform === 'win32' ? () => new Promise<string[]>((resolve, reject) => {
+      execFile('tasklist.exe', ['/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+        if (error) { reject(error); return }
+        const names = stdout.split(/\r?\n/).flatMap((line) => { const match = /^"([^"]+)"/.exec(line); return match ? [match[1]] : [] })
+        if (!names.some((name) => name.toLowerCase() === path.basename(process.execPath).toLowerCase())) { reject(Error('Unable to inspect running installers')); return }
+        resolve(names)
+      })
+    }) : undefined,
     notify: (state) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:state', state) },
     launch: async (file, type) => {
       if (type === 'appimage') app.relaunch({ execPath: file, args: process.argv.slice(1) })

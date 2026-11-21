@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, writeFile, stat, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, stat, readdir, rm, utimes, mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { ClientUpdates, compareVersions } from '../electron/updates.ts'
 
@@ -25,8 +25,9 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const origin = `http://127.0.0.1:${server.address().port}`
 const launched = [], states = []
+let runningInstallers = []
 const target = directory + '/Steam.AppImage'
-const create = (mode = 'appimage') => new ClientUpdates({ version: '0.2.3', directory, mode, target, api: origin + '/api', downloads: origin + '/download', notify: (s) => states.push(s), launch: async (...args) => launched.push(args) })
+const create = (mode = 'appimage', running = async () => runningInstallers) => new ClientUpdates({ version: '0.2.3', directory, mode, target, runningInstallers: running, api: origin + '/api', downloads: origin + '/download', notify: (s) => states.push(s), launch: async (...args) => launched.push(args) })
 try {
   assert.equal(compareVersions('0.2.10', '0.2.9'), 1)
   assert.equal(compareVersions('0.2.3+build.2', '0.2.3+build.1'), 0)
@@ -54,6 +55,23 @@ try {
   const nsis = create('nsis'); await nsis.check(); await nsis.install()
   assert.equal(launched[1][1], 'nsis'); assert.ok(launched[1][0].endsWith(setup)); assert.deepEqual(await readFile(launched[1][0]), payload)
   console.log('PASS installed Windows selects the exact Setup executable, verifies its checksum, and hands only the verified file to the installer launcher')
+  const installer = launched[1][0], cachedName = installer.slice(directory.length + 1)
+  runningInstallers = [cachedName.toUpperCase()]
+  await create('nsis').initialize(); assert.deepEqual(await readFile(installer), payload)
+  await create('nsis', async () => { throw Error('Process inspection failed') }).initialize(); assert.deepEqual(await readFile(installer), payload)
+  runningInstallers = []
+  const uuid = '12345678-1234-1234-1234-123456789abc'
+  const staleImage = `${target}.update-${uuid}`, stalePreference = `${directory}/update-preferences.json.${uuid}`
+  const freshPreference = `${directory}/update-preferences.json.aaaaaaaa-1234-1234-1234-123456789abc`
+  await writeFile(staleImage, 'partial'); await writeFile(stalePreference, 'partial'); await writeFile(freshPreference, 'active')
+  await writeFile(directory + '/unrelated.exe', 'keep'); await mkdir(directory + '/subdirectory')
+  await utimes(staleImage, new Date(0), new Date(0)); await utimes(stalePreference, new Date(0), new Date(0))
+  await create().initialize()
+  await assert.rejects(stat(installer), { code: 'ENOENT' }); await assert.rejects(stat(staleImage), { code: 'ENOENT' }); await assert.rejects(stat(stalePreference), { code: 'ENOENT' })
+  assert.equal(await readFile(freshPreference, 'utf8'), 'active'); assert.equal(await readFile(directory + '/unrelated.exe', 'utf8'), 'keep'); assert.equal((await stat(directory + '/subdirectory')).isDirectory(), true)
+  assert.deepEqual(await readFile(target), payload); assert.equal((await create().snapshot()).automatic, true)
+  await create().initialize()
+  console.log('PASS startup cleanup removes completed installers and stale AppImage/preferences staging, preserves running installers and unrelated/fresh files, fails closed on process-query errors and tolerates empty cleanup')
   const manual = create('manual'); await manual.check(); assert.equal(manual.snapshot().installable, false); await assert.rejects(manual.install(), /manual/)
   entries = [release('valvefin-v0.2.3')]; await updates.check(); assert.equal(updates.snapshot().status, 'current')
   entries = []; await updates.check(); assert.equal(updates.snapshot().status, 'current')

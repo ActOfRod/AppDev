@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, open, readFile, rename, rm, writeFile, chmod } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile, chmod } from 'node:fs/promises'
 import path from 'node:path'
 import type { UpdateState } from './update-types'
 
@@ -10,8 +10,11 @@ type Options = {
   notify: (state: UpdateState) => void
   launch: (file: string, mode: 'nsis' | 'appimage') => Promise<void>
   api?: string; downloads?: string
+  runningInstallers?: () => Promise<string[]>
 }
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
+const installerName = new RegExp(`${uuid.source.slice(0, -1)}-ValveFin-Setup-${semver.source.slice(1, -1)}\\.exe$`, 'i')
 export function compareVersions(a: string, b: string) {
   const left = semver.exec(a), right = semver.exec(b)
   if (!left || !right) throw Error('Invalid release version')
@@ -32,6 +35,23 @@ export class ClientUpdates {
   }
   async initialize() {
     try { const value = JSON.parse(await readFile(this.preferenceFile, 'utf8')); if (typeof value.automatic === 'boolean') this.state.automatic = value.automatic } catch { /* Missing or damaged preferences use the default. */ }
+    if (!this.controller) await this.cleanup().catch(() => undefined)
+  }
+  private async cleanup() {
+    const entries = await readdir(this.options.directory, { withFileTypes: true }).catch(() => [])
+    const stale = async (directory: string, name: string) => {
+      const file = path.join(directory, name)
+      try { const info = await lstat(file); if (info.isFile() && Date.now() - info.mtimeMs > 86400000) await rm(file, { force: true }) } catch { /* Cleanup is best effort. */ }
+    }
+    for (const entry of entries) if (entry.name.startsWith('update-preferences.json.') && uuid.test(entry.name.slice('update-preferences.json.'.length))) await stale(this.options.directory, entry.name)
+    if (this.options.target && path.isAbsolute(this.options.target)) {
+      const directory = path.dirname(this.options.target), prefix = path.basename(this.options.target) + '.update-'
+      for (const name of await readdir(directory).catch(() => [])) if (name.startsWith(prefix) && uuid.test(name.slice(prefix.length))) await stale(directory, name)
+    }
+    const installers = entries.filter((entry) => entry.isFile() && installerName.test(entry.name))
+    if (!installers.length || !this.options.runningInstallers) return
+    const running = new Set((await this.options.runningInstallers()).map((name) => name.toLowerCase()))
+    for (const entry of installers) if (!running.has(entry.name.toLowerCase())) await rm(path.join(this.options.directory, entry.name), { force: true }).catch(() => undefined)
   }
   snapshot(): UpdateState { return structuredClone(this.state) }
   private publish(patch: Partial<UpdateState>) { this.state = { ...this.state, ...patch }; this.options.notify(this.snapshot()) }

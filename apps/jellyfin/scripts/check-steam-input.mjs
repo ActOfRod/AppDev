@@ -85,11 +85,11 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
     screen: { getDisplayMatching: () => ({ bounds: displayBounds }) },
     ipcMain: { handle: (name, callback) => handlers.set(name, callback) }, powerSaveBlocker: {}, shell: {},
   }
-  vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', setTimeout: () => ({ unref() {} }), process: { platform, argv: ['ValveFin', '--user-data-dir=profile'], env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
+  vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', setTimeout: () => ({ unref() {} }), process: { platform, execPath: '/ValveFin.exe', argv: ['ValveFin', '--user-data-dir=profile'], env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
     if (name === 'electron') return electron
     if (name === './steam-overlay') return { steamOverlaySwitches }
     if (name === './updates') return { ClientUpdates: class { constructor(options) { updateOptions = options } async initialize() {} snapshot() { return { automatic: false } } } }
-    if (name === 'node:child_process') return { spawn: (file, args) => { launches.push({ file, args: [...args] }); return { unref() {}, once(name, callback) { if (name === 'spawn') callback() } } } }
+    if (name === 'node:child_process') return { execFile: (file, args, options, callback) => { assert.equal(file, 'tasklist.exe'); assert.deepEqual([...args], ['/FO', 'CSV', '/NH']); assert.equal(options.windowsHide, true); callback(null, '"ValveFin.exe","100"\r\n"active-setup.exe","200"\r\n') }, spawn: (file, args) => { launches.push({ file, args: [...args] }); return { unref() {}, once(name, callback) { if (name === 'spawn') callback() } } } }
     if (name === 'node:path') return path
     if (name === 'node:url') return { pathToFileURL }
     if (name === 'node:fs') return { readFileSync: () => JSON.stringify({ fullscreen: launchFullscreen }) }
@@ -104,6 +104,8 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   window.webContents.mainFrame.url = 'https://untrusted.invalid'
   await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'state'), /origin/)
   window.webContents.mainFrame.url = 'file:///dist/index.html'
+  if (platform === 'win32') assert.deepEqual([...(await updateOptions.runningInstallers())], ['ValveFin.exe', 'active-setup.exe'])
+  else assert.equal(updateOptions.runningInstallers, undefined)
   await updateOptions.launch('verified-setup.exe', 'nsis')
   assert.deepEqual(launches, [{ file: 'verified-setup.exe', args: ['--updated', '/S', '--force-run'] }])
   assert.equal(quits, 1)
