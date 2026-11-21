@@ -15,7 +15,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
   "build": {
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
     "afterPack": "electron/afterPack.cjs",
+    "afterSign": "electron/afterSign.cjs",
     "appId": "com.appdev.valvefin",
     "productName": "ValveFin",
     "executableName": "ValveFin",
@@ -73,7 +77,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
-    "electron": "^37.2.0",
+    "electron": "github:castlabs/electron-releases#v37.10.3+wvcus",
     "electron-builder": "^26.0.12",
     "typescript": "^5.8.3",
     "vite": "^7.0.4",
