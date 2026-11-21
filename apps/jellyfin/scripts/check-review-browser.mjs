@@ -15,8 +15,8 @@ const harness = `<html><body><div id="root"></div><script type="module">
 import React from '/node_modules/.vite/deps/react.js';
 import {createRoot} from '/node_modules/.vite/deps/react-dom_client.js';
 import '/src/styles.css';
-const root=createRoot(document.getElementById('root'));
-window.reviewMount=async(name,props)=>{const module=await import('/src/'+(name==='MusicPlayer'?'components/MusicPlayer':'screens/'+name)+'.tsx');root.render(React.createElement(module[name],props))};
+const root=createRoot(document.getElementById('root'));let revision=0;
+window.reviewMount=async(name,props)=>{const module=await import('/src/'+(name==='MusicPlayer'?'components/MusicPlayer':'screens/'+name)+'.tsx');root.render(React.createElement(module[name],{...props,key:++revision}));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
 </script></body></html>`
 let id = 0, savedStorage
 const pending = new Map()
@@ -45,6 +45,12 @@ const wait = async (expression) => {
 const click = async (text) => {
   const button = `[...document.querySelectorAll('button')].find(b=>!b.disabled&&b.textContent.trim()===${JSON.stringify(text)})`
   await wait(button); await evaluate(`${button}.click()`)
+}
+const pressA = async (condition) => {
+  await evaluate('window.reviewPad.buttons[0].pressed=true')
+  await wait(condition)
+  await evaluate('window.reviewPad.buttons[0].pressed=false')
+  await new Promise((r) => setTimeout(r, 100))
 }
 try {
   await send('Page.enable')
@@ -76,6 +82,21 @@ try {
   await click('Quick Connect')
   await wait('window.reviewSuccess===1')
   console.log('PASS Quick Connect pending/cancel, approved exchange failure surfaces error, retry succeeds')
+  await evaluate(`window.reviewPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.reviewPad];window.reviewNext=0;
+    window.reviewEpisodePlayer=()=>window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewEpisode,onBack:()=>{},onNext:()=>window.reviewNext++,startPositionTicks:380000000});await window.reviewEpisodePlayer()`)
+  await wait(`!!document.querySelector('.up-next') && document.querySelector('video').readyState>=2`)
+  await evaluate(`document.querySelector('video').pause()`)
+  await wait(`!!document.querySelector('button[aria-label="Play"]')`)
+  await evaluate(`document.querySelector('button[aria-label="Play"]').focus()`)
+  await pressA(`!document.querySelector('video').paused`)
+  assert.equal(await evaluate('window.reviewNext'), 0)
+  await evaluate(`document.querySelector('video').pause();[...document.querySelectorAll('.up-next button')].find(b=>b.textContent.startsWith('Cancel')).focus()`)
+  await pressA(`!document.querySelector('.up-next')`)
+  assert.equal(await evaluate('window.reviewNext'), 0)
+  await evaluate('await window.reviewEpisodePlayer()')
+  await wait(`document.activeElement?.textContent==='Play now · A'`)
+  await pressA('window.reviewNext===1')
+  console.log('PASS Up Next gamepad A activates focused Play/Pause and Cancel; default Play now still advances')
 } finally {
   if (savedStorage) await evaluate(`localStorage.clear();for(const[k,v]of Object.entries(${savedStorage}))localStorage.setItem(k,v)`)
   await send('Fetch.disable')

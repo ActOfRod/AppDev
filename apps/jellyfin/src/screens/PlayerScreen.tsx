@@ -167,7 +167,6 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
   }
 
   const activateFocusedControl = () => {
-    if (promptsRef.current.visible && openMenuRef.current === 'none') { promptsRef.current.playNext(); return true }
     const active = document.activeElement
     if (
       active instanceof HTMLElement &&
@@ -177,6 +176,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
       active.click()
       return true
     }
+    if (promptsRef.current.visible && openMenuRef.current === 'none') { promptsRef.current.playNext(); return true }
     if (openMenuRef.current !== 'none') {
       focusMenu(openMenuRef.current)
       return true
