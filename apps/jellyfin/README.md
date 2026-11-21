@@ -27,6 +27,10 @@ With the fixture running, use `node --experimental-strip-types scripts/check-liv
 
 ## Windows install
 
+For Steam Big Picture, add the **installed NSIS app executable** to Steam. Windows fullscreen uses a borderless normal-z-order window, not Electron's native fullscreen; other windows can appear above it. Returning from playback only restores renderer focus if ValveFin is already the foreground window. A second launch does not raise an existing background window (select it in Steam or the taskbar instead). No focus-on-blur or always-on-top policy is used.
+
+The portable `ValveFin.exe` is an NSIS launcher: it extracts the app into a temporary directory and waits for a child executable. Steam can attach to the launcher rather than the running app, so prefer the installed version for overlay compatibility. This is a separate caveat, **not an explanation for the reported installed-build overlay issue**. Native Windows/Steam overlay behavior still needs verification on the target machine.
+
 Download from [Releases](https://github.com/ActOfRod/AppDev/releases) when available:
 
 - **ValveFin.exe**: portable; keep it in a permanent, writable folder and run it.
