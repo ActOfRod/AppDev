@@ -1,587 +1,116 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { focusFirstFocusable, useControllerNavigation } from './hooks/useControllerNavigation'
-import {
-  authenticate,
-  clearSession,
-  getCollectionItems,
-  getLatestItems,
-  getLibraryItems,
-  getResumeItems,
-  getViews,
-  isPlayableItem,
-  itemImageUrl,
-  loadSession,
-  splitLibraryViews,
-  type JellyfinItem,
-  type JellyfinSession,
-} from './lib/jellyfin'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useControllerNavigation } from './hooks/useControllerNavigation'
+import { useScreenMemory } from './hooks/useScreenMemory'
+import { clearSession, getItem, getNextUp, getViews, loadSession, type JellyfinItem, type JellyfinSession } from './lib/jellyfin'
+import { forgetProfile, queryItems, rememberProfile, setFavorite, setPlayed } from './lib/catalog'
+import { loadPreferences } from './lib/preferences'
+import { HomeScreen } from './screens/HomeScreen'
+import { LibraryScreen } from './screens/LibraryScreen'
+import { SearchScreen } from './screens/SearchScreen'
+import { SettingsScreen } from './screens/SettingsScreen'
+import { AccountScreen } from './screens/AccountScreen'
 import { DetailScreen } from './screens/DetailScreen'
 import { PlayerScreen } from './screens/PlayerScreen'
+import { LiveTvScreen } from './screens/LiveTvScreen'
+import { LivePlayerScreen } from './screens/LivePlayerScreen'
+import { channels, type LiveItem } from './lib/liveTv'
+import { Card } from './components/Browse'
+import { MusicPlayer, MusicScreen } from './components/MusicPlayer'
+import { Screensaver } from './components/Screensaver'
 import './styles.css'
+import './liveTv.css'
 
-type ViewState =
-  | { screen: 'login' }
-  | { screen: 'home' }
-  | { screen: 'library'; library: JellyfinItem }
-  | { screen: 'detail'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
-  | { screen: 'player'; item: JellyfinItem; returnTo: Exclude<ViewState, { screen: 'login' | 'player' }> }
+type BrowseView = { screen: 'home' | 'search' | 'favorites' | 'settings' | 'music' } | { screen: 'library'; library: JellyfinItem; returnTo?: BrowseView } | { screen: 'detail'; item: JellyfinItem; returnTo: BrowseView }
+type View = BrowseView | { screen: 'live'; item: LiveItem; channels: LiveItem[]; returnTo: BrowseView } | { screen: 'login' } | { screen: 'prompt'; item: JellyfinItem; returnTo: BrowseView } | { screen: 'player'; item: JellyfinItem; start?: number; source?: string; returnTo: BrowseView }
 
-function App() {
-  const [session, setSession] = useState<JellyfinSession | null>(() => loadSession())
-  const [view, setView] = useState<ViewState>(() =>
-    loadSession() ? { screen: 'home' } : { screen: 'login' },
-  )
-
-  useControllerNavigation(view.screen !== 'login' && view.screen !== 'player')
-
+export default function App() {
+  const [session, setSession] = useState(loadSession)
+  const [view, setView] = useState<View>(() => loadSession() ? { screen: 'home' } : { screen: 'login' })
+  const [libraries, setLibraries] = useState<JellyfinItem[]>([])
+  const [message, setMessage] = useState('')
+  const [context, setContext] = useState<JellyfinItem | null>(null)
+  const [queue, setQueue] = useState<JellyfinItem[]>([])
+  const [prefs, setPrefs] = useState(loadPreferences)
+  const focusBeforeContext = useRef<HTMLElement | null>(null)
+  const previousScreen = useRef(view.screen)
   useEffect(() => {
-    if (view.screen === 'login' || view.screen === 'player') return
-    const id = window.setTimeout(() => {
-      focusFirstFocusable()
-    }, 0)
-    return () => window.clearTimeout(id)
+    const previous = previousScreen.current
+    previousScreen.current = view.screen
+    if (previous !== view.screen && (previous === 'player' || previous === 'live' || previous === 'detail')) {
+      void window.jellyfinDesktop?.focusWindow?.().catch(() => undefined)
+    }
   }, [view.screen])
-
+  useControllerNavigation(view.screen !== 'player' && view.screen !== 'live')
+  const success = useCallback((s: JellyfinSession) => { rememberProfile(s); setSession(s); setMessage(''); setView({ screen: 'home' }) }, [])
+  const signOut = () => { clearSession(); setSession(null); setQueue([]); setView({ screen: 'login' }) }
+  useEffect(() => { const change = () => setPrefs(loadPreferences()); window.addEventListener('valvefin:preferences', change); return () => window.removeEventListener('valvefin:preferences', change) }, [])
+  useEffect(() => { document.documentElement.style.setProperty('--accent', prefs.accent); document.documentElement.style.setProperty('--accent-strong', prefs.accent); void window.jellyfinDesktop?.setLaunchFullscreen(prefs.fullscreen) }, [prefs])
   useEffect(() => {
-    const onBack = () => {
-      if (view.screen === 'player') {
-        setView(view.returnTo)
-      } else if (view.screen === 'detail') {
-        setView(view.returnTo)
-      } else if (view.screen === 'library') {
-        setView({ screen: 'home' })
-      }
-    }
-    window.addEventListener('jellyfin:back', onBack)
-    return () => window.removeEventListener('jellyfin:back', onBack)
-  }, [view])
-
-  const signOut = () => {
-    clearSession()
-    setSession(null)
-    setView({ screen: 'login' })
-  }
-
-  const openItem = (
-    item: JellyfinItem,
-    returnTo: Exclude<ViewState, { screen: 'login' | 'player' }>,
-  ) => {
-    if (isPlayableItem(item)) {
-      setView({ screen: 'player', item, returnTo })
-      return
-    }
-    setView({ screen: 'detail', item, returnTo })
-  }
-
-  if (!session || view.screen === 'login') {
-    return (
-      <LoginScreen
-        onSuccess={(next) => {
-          setSession(next)
-          setView({ screen: 'home' })
-        }}
-      />
-    )
-  }
-
-  if (view.screen === 'player') {
-    return (
-      <PlayerScreen
-        session={session}
-        item={view.item}
-        onBack={() => setView(view.returnTo)}
-      />
-    )
-  }
-
-  if (view.screen === 'detail') {
-    return (
-      <DetailScreen
-        session={session}
-        item={view.item}
-        onBack={() => setView(view.returnTo)}
-        onSignOut={signOut}
-        onOpenItem={(item) => openItem(item, view)}
-        onPlay={(item) => setView({ screen: 'player', item, returnTo: view })}
-      />
-    )
-  }
-
-  if (view.screen === 'library') {
-    return (
-      <LibraryScreen
-        session={session}
-        library={view.library}
-        onBack={() => setView({ screen: 'home' })}
-        onSignOut={signOut}
-        onOpenItem={(item) => openItem(item, view)}
-      />
-    )
-  }
-
-  return (
-    <HomeScreen
-      session={session}
-      onOpenLibrary={(library) => setView({ screen: 'library', library })}
-      onOpenItem={(item) => openItem(item, { screen: 'home' })}
-      onSignOut={signOut}
-    />
-  )
-}
-
-function LoginScreen({ onSuccess }: { onSuccess: (session: JellyfinSession) => void }) {
-  const [serverUrl, setServerUrl] = useState(
-    () => localStorage.getItem('jellyfin.livingroom.serverUrl') ?? '',
-  )
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      const session = await authenticate({ serverUrl, username, password })
-      localStorage.setItem('jellyfin.livingroom.serverUrl', session.serverUrl)
-      onSuccess(session)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="login-shell">
-      <div className="login-glow" aria-hidden />
-      <form className="login-card" onSubmit={submit}>
-        <p className="brand">ValveFin</p>
-        <h1>Sign in</h1>
-        <p className="lede">Sign in with keyboard and mouse. After that, use your controller.</p>
-
-        <label>
-          Server URL
-          <input
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            placeholder="http://192.168.1.50:8096"
-            autoComplete="url"
-            required
-            autoFocus
-          />
-        </label>
-
-        <label>
-          Username
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            required
-          />
-        </label>
-
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
-        </label>
-
-        {error ? <p className="error">{error}</p> : null}
-
-        <button type="submit" className="primary" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-    </div>
-  )
-}
-
-function HomeScreen({
-  session,
-  onOpenLibrary,
-  onOpenItem,
-  onSignOut,
-}: {
-  session: JellyfinSession
-  onOpenLibrary: (library: JellyfinItem) => void
-  onOpenItem: (item: JellyfinItem) => void
-  onSignOut: () => void
-}) {
-  const [mediaLibraries, setMediaLibraries] = useState<JellyfinItem[]>([])
-  const [collections, setCollections] = useState<JellyfinItem[]>([])
-  const [resume, setResume] = useState<JellyfinItem[]>([])
-  const [latestMovies, setLatestMovies] = useState<JellyfinItem[]>([])
-  const [latestShows, setLatestShows] = useState<JellyfinItem[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const [nextViews, nextResume, nextMovies, nextShows] = await Promise.all([
-          getViews(session),
-          getResumeItems(session),
-          getLatestItems(session, { includeItemTypes: 'Movie', limit: 24 }),
-          getLatestItems(session, { includeItemTypes: 'Series', limit: 24 }),
-        ])
-        if (cancelled) return
-
-        const { mediaLibraries: libraries, collectionsLibrary } = splitLibraryViews(nextViews)
-        const nextCollections = await getCollectionItems(session, collectionsLibrary?.Id)
-
-        if (cancelled) return
-        setMediaLibraries(libraries)
-        setCollections(nextCollections)
-        setResume(nextResume)
-        setLatestMovies(nextMovies)
-        setLatestShows(nextShows)
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load home')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
+    const expired = () => { if (session) forgetProfile(session); setMessage('Your session expired. Please sign in again.'); clearSession(); setSession(null); setQueue([]); setView({ screen: 'login' }) }
+    window.addEventListener('jellyfin:unauthorized', expired); return () => window.removeEventListener('jellyfin:unauthorized', expired)
   }, [session])
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="brand">ValveFin</p>
-          <h1>Welcome back, {session.userName}</h1>
-        </div>
-        <div className="topbar-actions">
-          <button type="button" className="ghost" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      {error ? <p className="error banner">{error}</p> : null}
-      {loading ? <p className="muted banner">Loading your libraries…</p> : null}
-
-      <section className="section">
-        <div className="section-heading">
-          <h2>My Media</h2>
-        </div>
-        <div className="media-rail">
-          {mediaLibraries.map((item, index) => (
-            <MediaLibraryCard
-              key={item.Id}
-              item={item}
-              autoFocus={index === 0}
-              onSelect={() => onOpenLibrary(item)}
-            />
-          ))}
-        </div>
-      </section>
-
-      {collections.length > 0 ? (
-        <section className="section">
-          <div className="section-heading">
-            <h2>Collections</h2>
-          </div>
-          <div className="rail poster-rail">
-            {collections.map((item) => (
-              <PosterCard
-                key={item.Id}
-                session={session}
-                item={item}
-                subtitle="Collection"
-                onSelect={() => onOpenLibrary(item)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {resume.length > 0 ? (
-        <section className="section">
-          <div className="section-heading">
-            <h2>Continue Watching</h2>
-          </div>
-          <div className="rail resume-rail">
-            {resume.map((item) => (
-              <PosterCard
-                key={item.Id}
-                session={session}
-                item={item}
-                subtitle={resumeSubtitle(item)}
-                progress={item.UserData?.PlayedPercentage}
-                onSelect={() => onOpenItem(item)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {latestShows.length > 0 ? (
-        <section className="section">
-          <div className="section-heading">
-            <h2>Recently Added TV</h2>
-          </div>
-          <div className="rail poster-rail">
-            {latestShows.map((item) => (
-              <PosterCard
-                key={item.Id}
-                session={session}
-                item={item}
-                hideMeta
-                onSelect={() => onOpenItem(item)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {latestMovies.length > 0 ? (
-        <section className="section">
-          <div className="section-heading">
-            <h2>Recently Added Movies</h2>
-          </div>
-          <div className="rail poster-rail">
-            {latestMovies.map((item) => (
-              <PosterCard
-                key={item.Id}
-                session={session}
-                item={item}
-                hideMeta
-                onSelect={() => onOpenItem(item)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <p className="hint">Controller: D-pad / stick move · A select · B back · Y fullscreen</p>
-    </div>
-  )
-}
-
-function LibraryScreen({
-  session,
-  library,
-  onBack,
-  onSignOut,
-  onOpenItem,
-}: {
-  session: JellyfinSession
-  library: JellyfinItem
-  onBack: () => void
-  onSignOut: () => void
-  onOpenItem: (item: JellyfinItem) => void
-}) {
-  const [items, setItems] = useState<JellyfinItem[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
+  useEffect(() => { let active = true; if (session) getViews(session).then((r) => { if (active) setLibraries(r) }).catch(() => undefined); return () => { active = false } }, [session])
   useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const next = await getLibraryItems(session, library.Id)
-        if (!cancelled) setItems(next)
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load library')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
+    const back = () => {
+      if (context) { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()); return }
+      if (document.querySelector('.live-screen [data-modal]')) return
+      if (view.screen === 'detail' || view.screen === 'prompt') setView(view.returnTo)
+      else if (view.screen === 'library' && view.returnTo) setView(view.returnTo)
+      else if (view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login') setView({ screen: 'home' })
     }
-  }, [session, library.Id])
-
-  const backdrop = useMemo(
-    () => itemImageUrl(session, library, { type: 'Backdrop', maxWidth: 1920 }),
-    [session, library],
-  )
-
-  return (
-    <div className="app-shell">
-      <div
-        className="library-hero"
-        style={backdrop ? { backgroundImage: `url(${backdrop})` } : undefined}
-      >
-        <div className="library-hero-shade">
-          <header className="topbar">
-            <div>
-              <button type="button" className="ghost" onClick={onBack} autoFocus>
-                ← Back
-              </button>
-              <p className="brand">ValveFin</p>
-              <h1>{library.Name}</h1>
-            </div>
-            <div className="topbar-actions">
-              <button type="button" className="ghost" onClick={onSignOut}>
-                Sign out
-              </button>
-            </div>
-          </header>
-        </div>
-      </div>
-
-      {error ? <p className="error banner">{error}</p> : null}
-      {loading ? <p className="muted banner">Loading titles…</p> : null}
-
-      <section className="section">
-        <div className="poster-grid">
-          {items.map((item) => (
-            <PosterCard
-              key={item.Id}
-              session={session}
-              item={item}
-              subtitle={item.ProductionYear ? String(item.ProductionYear) : undefined}
-              onSelect={() => onOpenItem(item)}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function PosterCard({
-  session,
-  item,
-  subtitle,
-  progress,
-  onSelect,
-  autoFocus,
-  hideMeta = false,
-}: {
-  session: JellyfinSession
-  item: JellyfinItem
-  subtitle?: string
-  progress?: number
-  onSelect: () => void
-  autoFocus?: boolean
-  hideMeta?: boolean
-}) {
-  const image = itemImageUrl(session, item, { maxWidth: 480 })
-
-  return (
-    <button
-      type="button"
-      className={`poster-card ${hideMeta ? 'poster-card-art-only' : ''}`}
-      onClick={onSelect}
-      autoFocus={autoFocus}
-      aria-label={item.Name}
-    >
-      <div className="poster-art" style={image ? { backgroundImage: `url(${image})` } : undefined}>
-        {!image ? <span>{item.Name.slice(0, 1)}</span> : null}
-        {typeof progress === 'number' && progress > 0 ? (
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${Math.min(progress, 100)}%` }} />
-          </div>
-        ) : null}
-      </div>
-      {!hideMeta ? (
-        <div className="poster-meta">
-          <strong>{item.Name}</strong>
-          {subtitle ? <span>{subtitle}</span> : null}
-        </div>
-      ) : null}
-    </button>
-  )
-}
-
-function MediaLibraryCard({
-  item,
-  onSelect,
-  autoFocus,
-}: {
-  item: JellyfinItem
-  onSelect: () => void
-  autoFocus?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      className="media-card"
-      onClick={onSelect}
-      autoFocus={autoFocus}
-      aria-label={item.Name}
-    >
-      <span className="media-card-icon" aria-hidden="true">
-        {libraryIcon(item)}
-      </span>
-      <span className="media-card-label">{item.Name}</span>
-    </button>
-  )
-}
-
-function libraryIcon(item: JellyfinItem) {
-  const type = (item.CollectionType ?? item.Type ?? '').toLowerCase()
-  if (type === 'movies' || type === 'homevideos') {
-    return (
-      <svg viewBox="0 0 24 24">
-        <path
-          fill="currentColor"
-          d="M18 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM8 6h2v2H8V6zm0 4h2v2H8v-2zm0 4h2v2H8v-2zm0 4h2v2H8v-2zm10 2h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6V6h6v2z"
-        />
-      </svg>
-    )
-  }
-  if (type === 'tvshows') {
-    return (
-      <svg viewBox="0 0 24 24">
-        <path
-          fill="currentColor"
-          d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"
-        />
-      </svg>
-    )
-  }
-  if (type === 'music' || type === 'musicvideos') {
-    return (
-      <svg viewBox="0 0 24 24">
-        <path
-          fill="currentColor"
-          d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
-        />
-      </svg>
-    )
-  }
-  return (
-    <svg viewBox="0 0 24 24">
-      <path
-        fill="currentColor"
-        d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
-      />
-    </svg>
-  )
-}
-
-function resumeSubtitle(item: JellyfinItem): string {
-  if (item.SeriesName) {
-    const season = item.ParentIndexNumber
-    const episode = item.IndexNumber
-    if (season != null && episode != null) {
-      return `${item.SeriesName} · S${season}:E${episode}`
+    const actions = (e: Event) => {
+      if (view.screen === 'player' || view.screen === 'live' || !session || document.querySelector('[data-modal]')) return
+      const item = (e as CustomEvent<JellyfinItem>).detail ?? (() => { const data = document.activeElement?.closest<HTMLElement>('[data-item]')?.dataset.item; try { return data ? JSON.parse(data) as JellyfinItem : null } catch { return null } })()
+      if (item) { focusBeforeContext.current = document.activeElement as HTMLElement; setContext(item); setMessage('') }
     }
-    return item.SeriesName
+    window.addEventListener('jellyfin:back', back); window.addEventListener('valvefin:context', actions)
+    return () => { window.removeEventListener('jellyfin:back', back); window.removeEventListener('valvefin:context', actions) }
+  }, [view, context, session])
+  const browse: BrowseView = ['player', 'live', 'prompt', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
+  const open = (item: JellyfinItem) => setView(item.Type === 'BoxSet' || item.Type === 'CollectionFolder' ? { screen: 'library', library: item, returnTo: browse } : { screen: 'detail', item, returnTo: browse })
+  const play = async (item: JellyfinItem, start?: number, source?: string) => {
+    if (!session) return
+    setContext(null)
+    setMessage('')
+    if (item.Type === 'TvChannel') {
+      try { setView({ screen: 'live', item, channels: await channels(session), returnTo: browse }) } catch (e) { setMessage(String(e)) }
+    } else if (item.Type === 'Audio') {
+      try { const fresh = await getItem(session, item.Id); const album = fresh.AlbumId ?? fresh.ParentId; const tracks = album ? (await queryItems(session, { ParentId: album, IncludeItemTypes: 'Audio', SortBy: 'ParentIndexNumber,IndexNumber', Limit: 500 })).Items : [fresh]; const at = tracks.findIndex((t) => t.Id === item.Id); setQueue(at >= 0 ? tracks.slice(at) : [fresh]) }
+      catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to play music') }
+    } else if (item.Type === 'Series') {
+      try { const next = await getNextUp(session, item.Id); if (!next) throw Error('No episodes available'); setView({ screen: 'player', item: next, returnTo: browse }) }
+      catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to play series') }
+    } else if (['Movie', 'Episode', 'Video', 'Trailer', 'MusicVideo', 'Recording'].includes(item.Type)) setView({ screen: 'player', item, start, source, returnTo: browse })
+    else open(item)
   }
-  return item.Type
+  let content
+  if (!session || view.screen === 'login') content = <AccountScreen success={success} message={message} />
+  else if (view.screen === 'player') content = <PlayerScreen key={view.item.Id} session={session} item={view.item} startPositionTicks={view.start} mediaSourceId={view.source} onNext={(item) => setView({ ...view, item, start: 0, source: undefined })} onBack={() => setView(view.returnTo)} />
+  else if (view.screen === 'prompt') content = <section className="resume-prompt app-shell" role="dialog" data-modal aria-label="Resume playback"><p className="brand">Continue Watching</p><h1>{view.item.Name}</h1><div className="toolbar"><button className="primary" autoFocus onClick={() => setView({ ...view, screen: 'player' })}>Resume</button><button className="ghost" onClick={() => setView({ ...view, screen: 'player', start: 0 })}>Start over</button><button className="ghost" onClick={() => setView(view.returnTo)}>Cancel</button></div></section>
+  else if (view.screen === 'detail') content = <DetailScreen key={view.item.Id} session={session} item={view.item} onBack={() => setView(view.returnTo)} onOpenItem={open} onPlay={(i, start, source) => void play(i, start, source)} onSignOut={signOut} />
+  else if (view.screen === 'live') content = <LivePlayerScreen key={view.item.Id} session={session} channel={view.item} all={view.channels} change={(item) => setView({ ...view, item })} back={() => setView(view.returnTo)} />
+  else if (view.screen === 'library') content = view.library.CollectionType?.toLowerCase() === 'livetv' ? <LiveTvScreen session={session} play={(item, all) => setView({ screen: 'live', item, channels: all, returnTo: view })} recording={(item) => void play(item)} /> : <LibraryScreen key={view.library.Id} session={session} library={view.library} open={open} />
+  else if (view.screen === 'search') content = <SearchScreen session={session} open={open} />
+  else if (view.screen === 'settings') content = <SettingsScreen switchAccount={signOut} libraries={libraries} />
+  else if (view.screen === 'music') content = <MusicScreen session={session} open={open} play={setQueue} />
+  else if (view.screen === 'favorites') content = <FavoritesScreen session={session} open={open} />
+  else content = <HomeScreen session={session} open={open} play={(i) => void play(i)} resume={(item) => setView({ screen: 'prompt', item, returnTo: { screen: 'home' } })} />
+  const navigationLibraries = libraries.filter((library) => library.CollectionType !== 'music')
+  return <><div className={session && view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login' ? 'browse-layout' : ''}>{session && view.screen !== 'player' && view.screen !== 'live' && view.screen !== 'login' && <nav className="nav-rail" aria-label="Main navigation"><p className="brand">ValveFin</p>{(['home', 'search', 'favorites', 'music', 'settings'] as const).map((screen) => <button key={screen} className={view.screen === screen ? 'primary' : 'ghost'} onClick={() => setView({ screen })}>{screen[0].toUpperCase() + screen.slice(1)}</button>)}{navigationLibraries.length > 0 && <p className="nav-section-label">Libraries</p>}{navigationLibraries.map((library) => <button className={view.screen === 'library' && view.library.Id === library.Id ? 'primary' : 'ghost'} key={library.Id} onClick={() => setView({ screen: 'library', library })}>{library.Name}</button>)}<small>{session.userName} · Start: navigation</small></nav>}{content}</div>
+    {session && message && !context && <aside className="global-error" role="alert"><p>{message}</p><button className="ghost" onClick={() => setMessage('')}>Dismiss</button></aside>}
+    {session && <MusicPlayer key={session.userId + session.serverUrl} session={session} queue={queue} setQueue={setQueue} suspended={view.screen === 'player' || view.screen === 'live'} />}
+    {session && <Screensaver session={session} disabled={view.screen === 'player' || view.screen === 'live' || !!context} minutes={prefs.idleMinutes} />}
+    {context && session && <div className="modal-shade"><section className="dialog" role="dialog" data-modal aria-label="Title actions"><h2>{context.Name}</h2><div className="context-actions"><button className="primary" autoFocus onClick={() => void play(context)}>Play / open</button><button className="ghost" onClick={async () => { try { await setPlayed(session, context, !context.UserData?.Played); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.Played ? 'Mark unwatched' : 'Mark watched'}</button><button className="ghost" onClick={async () => { try { await setFavorite(session, context, !context.UserData?.IsFavorite); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.IsFavorite ? 'Remove favorite' : 'Favorite'}</button>{context.SeriesId && <button className="ghost" onClick={async () => { try { const i = await getItem(session, context.SeriesId!); setContext(null); open(i) } catch (e) { setMessage(String(e)) } }}>Go to series</button>}<button className="ghost" onClick={() => { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()) }}>Close · B</button></div>{message && <p className="error">{message}</p>}</section></div>}
+  </>
 }
 
-export default App
+function FavoritesScreen({ session, open }: { session: JellyfinSession; open: (i: JellyfinItem) => void }) {
+  useScreenMemory('favorites')
+  const [items, set] = useState<JellyfinItem[]>([])
+  const [error, setError] = useState('')
+  const [total, setTotal] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(async (start: number) => { setBusy(true); try { const r = await queryItems(session, { IsFavorite: 'true', StartIndex: start, Limit: 60 }); set((old) => start ? [...old, ...r.Items] : r.Items); setTotal(r.TotalRecordCount); setError('') } catch (e) { setError(String(e)) } finally { setBusy(false) } }, [session])
+  useEffect(() => { void load(0) }, [load])
+  return <main className="app-shell"><h1>Favorites · {total}</h1>{error && <p className="error">{error}</p>}{!items.length && !busy && <p>No favorites yet. Choose Favorite on any title, or press X on a card.</p>}<div className="poster-grid">{items.map((i) => <Card key={i.Id} session={session} item={i} open={open} />)}</div>{busy && <p>Loading favorites…</p>}{(items.length < total || error) && <button className="ghost" onClick={() => void load(error ? 0 : items.length)}>Load favorites</button>}</main>
+}

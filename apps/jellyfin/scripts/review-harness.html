@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+  <head><title>ValveFin review checks</title></head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import '../src/styles.css'
+
+      const root = createRoot(document.getElementById('root'))
+      let revision = 0
+      window.reviewMount = async (name, props) => {
+        const module = await import('/src/' + (name === 'App' ? 'App' : name === 'MusicPlayer' ? 'components/MusicPlayer' : 'screens/' + name) + '.tsx')
+        root.render(React.createElement(name === 'App' ? module.default : module[name], { ...props, key: ++revision }))
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      }
+    </script>
+  </body>
+</html>

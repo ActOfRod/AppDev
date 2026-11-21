@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
+import { createPadReader } from '../lib/gamepad'
 
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 function isVisible(el: HTMLElement): boolean {
   if (!el.isConnected) return false
@@ -11,7 +12,7 @@ function isVisible(el: HTMLElement): boolean {
   return rect.width > 0 && rect.height > 0
 }
 
-function getFocusable(root: ParentNode = document): HTMLElement[] {
+function getFocusable(root: ParentNode = Array.from(document.querySelectorAll('[data-modal]')).at(-1) ?? document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isVisible)
 }
 
@@ -91,6 +92,7 @@ function findNeighbor(current: HTMLElement, direction: Direction): HTMLElement |
 }
 
 function moveFocus(direction: Direction) {
+  if (!window.dispatchEvent(new CustomEvent('valvefin:navigate', { detail: direction, cancelable: true }))) return
   const active = getActiveFocusable()
   if (!active) {
     focusFirstFocusable()
@@ -99,6 +101,7 @@ function moveFocus(direction: Direction) {
 
   const next = findNeighbor(active, direction)
   next?.focus()
+  next?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
 function activateFocused() {
@@ -127,32 +130,21 @@ async function toggleFullscreen() {
   }
 }
 
-function seedButtonState(target: Record<number, boolean>) {
-  const pads = navigator.getGamepads?.() ?? []
-  const pad = pads.find((p) => p && p.connected)
-  if (!pad) return
-  for (let i = 0; i < pad.buttons.length; i += 1) {
-    target[i] = Boolean(pad.buttons[i]?.pressed)
-  }
-}
-
 /**
  * Spatial navigation for couch / Steam Big Picture use.
  * Keyboard arrows work as a fallback; gamepad D-pad / left stick move focus.
  * A / South activates; B / East goes back; Y / North toggles fullscreen.
  */
 export function useControllerNavigation(enabled: boolean) {
-  const buttonState = useRef<Record<number, boolean>>({})
   const stickCooldown = useRef(0)
 
   useEffect(() => {
     if (!enabled) {
-      buttonState.current = {}
       return
     }
 
     // Avoid phantom presses from buttons still held after leaving the player.
-    seedButtonState(buttonState.current)
+    const readPads = createPadReader(navigator.getGamepads?.() ?? [])
     // Recover focus if the previous screen left a detached activeElement.
     if (!getActiveFocusable()) {
       // Wait a frame so the new screen's autoFocus/layout can settle.
@@ -208,17 +200,15 @@ export function useControllerNavigation(enabled: boolean) {
     let frame = 0
     const poll = () => {
       frame = requestAnimationFrame(poll)
-      const pads = navigator.getGamepads?.() ?? []
-      const pad = pads.find((p) => p && p.connected)
-      if (!pad) return
+      const handledButtons = new Set<number>()
+      for (const input of readPads(navigator.getGamepads?.() ?? [])) {
+      const pad = input.pad
 
       const now = performance.now()
-      const pressed = (index: number) => Boolean(pad.buttons[index]?.pressed)
       const justPressed = (index: number) => {
-        const isDown = pressed(index)
-        const wasDown = buttonState.current[index] ?? false
-        buttonState.current[index] = isDown
-        return isDown && !wasDown
+        if (!input.pressed.has(index) || handledButtons.has(index)) return false
+        handledButtons.add(index)
+        return true
       }
 
       // D-pad
@@ -237,6 +227,8 @@ export function useControllerNavigation(enabled: boolean) {
       if (justPressed(3)) {
         void toggleFullscreen()
       }
+      if (justPressed(2)) window.dispatchEvent(new Event('valvefin:context'))
+      if (justPressed(9)) { if (document.querySelector('[data-modal]')) window.dispatchEvent(new Event('valvefin:activity')); else { document.querySelector<HTMLElement>('.nav-rail button')?.focus(); window.scrollTo({ top: 0 }) } }
 
       // Left stick with cooldown
       if (now >= stickCooldown.current) {
@@ -251,6 +243,7 @@ export function useControllerNavigation(enabled: boolean) {
           }
           stickCooldown.current = now + 220
         }
+      }
       }
     }
 
