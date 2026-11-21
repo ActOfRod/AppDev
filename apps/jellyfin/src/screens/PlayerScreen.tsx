@@ -869,7 +869,8 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
                 type="button"
                 className="osd-btn"
                 onClick={() => void toggleFullscreen()}
-                aria-label="Fullscreen"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                aria-pressed={isFullscreen}
               >
                 {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
               </button>

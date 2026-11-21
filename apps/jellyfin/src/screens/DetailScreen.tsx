@@ -25,7 +25,7 @@ export function DetailScreen({ session, item: initial, onBack, onOpenItem, onPla
   const [trackMenu, setTrackMenu] = useState<'audio' | 'subtitle' | null>(null)
   const trackFocus = useRef<HTMLButtonElement | null>(null)
   const closeTracks = () => { setTrackMenu(null); requestAnimationFrame(() => trackFocus.current?.focus()) }
-  useEffect(() => { document.querySelector<HTMLElement>('.detail-shell [data-focus-key="play"], .detail-shell [data-focus-key="play-series"]')?.focus({ preventScroll: true }) }, [initial.Id])
+  useEffect(() => { window.scrollTo(0, 0); document.querySelector<HTMLElement>('.detail-shell [data-focus-key="play"], .detail-shell [data-focus-key="play-series"]')?.focus({ preventScroll: true }) }, [initial.Id])
   useEffect(() => { setAudioSelection(''); setSubtitleSelection('') }, [source])
   useEffect(() => {
     if (!trackMenu) return
@@ -66,14 +66,13 @@ export function DetailScreen({ session, item: initial, onBack, onOpenItem, onPla
   const act = async (task: () => Promise<unknown>) => { setBusy(true); setError(''); try { await task() } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update title') } finally { setBusy(false) } }
   const media = item.MediaSources?.find((s) => s.Id === source) ?? item.MediaSources?.[0]
   const video = media?.MediaStreams?.find((s) => s.Type === 'Video')
-  const audio = media?.MediaStreams?.find((s) => s.Type === 'Audio' && s.Index === media.DefaultAudioStreamIndex) ?? media?.MediaStreams?.find((s) => s.Type === 'Audio' && s.IsDefault) ?? media?.MediaStreams?.find((s) => s.Type === 'Audio')
   const backdrop = itemImageUrl(session, item, { type: 'Backdrop', maxWidth: 1920 }) ?? (item.ParentBackdropItemId ? itemImageUrl(session, { ...item, Id: item.ParentBackdropItemId, BackdropImageTags: item.ParentBackdropImageTags }, { type: 'Backdrop', maxWidth: 1920 }) : null)
   const logo = item.ImageTags?.Logo && itemImageUrl(session, item, { type: 'Logo', maxWidth: 700 })
   const playable = isPlayableItem(item) || item.Type === 'Audio'
   const people: JellyfinItem[] = (item.People ?? []).map((p) => ({ Id: p.Id, Name: p.Name, Type: 'Person', Overview: p.Role || p.Type, ImageTags: { Primary: p.PrimaryImageTag } }))
   const tracks = { audioStreamIndex: audioSelection === '' ? undefined : Number(audioSelection), subtitleStreamIndex: subtitleSelection === '' ? undefined : subtitleSelection === 'off' ? null : Number(subtitleSelection) }
   const play = (start?: number) => onPlay(item, start, source || undefined, tracks)
-  const audioOptions = [{ value: '', label: `Default${audio?.DisplayTitle ? ` · ${audio.DisplayTitle}` : ''}` }, ...(media?.MediaStreams ?? []).filter((s) => s.Type === 'Audio').map((s) => ({ value: String(s.Index), label: s.DisplayTitle || s.Language || s.Codec || `Track ${s.Index}` }))]
+  const audioOptions = [{ value: '', label: 'Automatic' }, ...(media?.MediaStreams ?? []).filter((s) => s.Type === 'Audio').map((s) => ({ value: String(s.Index), label: s.DisplayTitle || s.Language || s.Codec || `Track ${s.Index}` }))]
   const subtitleOptions = [{ value: '', label: 'Automatic' }, { value: 'off', label: 'Off' }, ...(media?.MediaStreams ?? []).filter((s) => s.Type === 'Subtitle').map((s) => ({ value: String(s.Index), label: s.DisplayTitle || s.Language || s.Codec || `Track ${s.Index}` }))]
   const facts = { Genres: item.Genres?.join(', '), Director: item.People?.filter((p) => p.Type === 'Director').map((p) => p.Name).join(', '), Writers: item.People?.filter((p) => p.Type === 'Writer' || /writer|screenplay|story/i.test(p.Role ?? '')).map((p) => p.Name).join(', '), Studios: item.Studios?.map((s) => s.Name).join(', ') }
   const remaining = Math.max(0, (item.RunTimeTicks ?? 0) - (item.UserData?.PlaybackPositionTicks ?? 0))

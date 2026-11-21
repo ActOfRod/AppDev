@@ -7,9 +7,9 @@ export function episodeCard(session: JellyfinSession, item: JellyfinItem) {
     const url = itemImageUrl(session, { Id: id, Name: '', Type: 'Series', ImageTags: { [type]: tag }, BackdropImageTags: type === 'Backdrop' ? [tag] : undefined }, { type, maxWidth: 600 })
     if (url && !images.includes(url)) images.push(url)
   }
-  add(item.SeriesId, 'Thumb', item.SeriesThumbImageTag)
+  add(item.SeriesId ?? item.ParentThumbItemId, 'Thumb', item.SeriesThumbImageTag)
   add(item.ParentThumbItemId, 'Thumb', item.ParentThumbImageTag)
-  add(item.ParentBackdropItemId, 'Backdrop', item.ParentBackdropImageTags?.[0])
+  add(item.ParentBackdropItemId ?? item.SeriesId, 'Backdrop', item.ParentBackdropImageTags?.[0])
   add(item.SeriesId, 'Primary', item.SeriesPrimaryImageTag)
   const fallback = itemImageUrl(session, item, { maxWidth: 600 })
   if (fallback) images.push(fallback)

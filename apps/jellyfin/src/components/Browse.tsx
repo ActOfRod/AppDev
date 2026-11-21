@@ -15,7 +15,7 @@ export function Card({ session, item: initial, open, home = false }: { session: 
   const [failed, setFailed] = useState<string[]>([])
   const image = images.find((url) => !failed.includes(url))
   return <button className="poster-card" data-focus-key={item.Id} data-item={JSON.stringify(item)} aria-label={item.Name} onClick={() => open(item)} onContextMenu={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('valvefin:context', { detail: item })) }}>
-    <div className="poster-art">{image ? <img className="poster-image" src={image} alt="" loading="lazy" onError={() => setFailed((old) => [...old, image])} /> : <span>{item.Name[0]}</span>}<span className={`card-state${item.UserData?.Played ? ' is-played' : ''}`}>{item.UserData?.Played ? '✓' : item.UserData?.UnplayedItemCount ? `${item.UserData.UnplayedItemCount} new` : ''}{item.UserData?.IsFavorite ? ' ♥' : ''}</span></div>
+    <div className="poster-art">{image ? <img className="poster-image" src={image} alt="" onError={() => setFailed((old) => [...old, image])} /> : <span>{item.Name[0]}</span>}<span className={`card-state${item.UserData?.Played ? ' is-played' : ''}`}>{item.UserData?.Played ? '✓' : item.UserData?.UnplayedItemCount ? `${item.UserData.UnplayedItemCount} new` : ''}{item.UserData?.IsFavorite ? ' ♥' : ''}</span></div>
     <div className="poster-meta"><strong>{episode?.title ?? item.Name}</strong><span>{episode?.subtitle ?? `${item.Type} ${item.ProductionYear ?? ''}`}</span></div>
   </button>
 }

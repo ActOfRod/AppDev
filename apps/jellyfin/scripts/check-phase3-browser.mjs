@@ -30,8 +30,8 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: `window.testPad={c
 if (process.env.RESUME_PHASE3 && await evaluate(`!document.querySelector('button')`)) { await send('Page.navigate', { url: 'http://localhost:5173' }); await wait(`!!document.querySelector('.nav-rail')`) }
 if (process.env.RESUME_PHASE3) await evaluate(`(async()=>{const p=await import('/src/lib/preferences.ts');p.savePreferences({...p.loadPreferences(),idleMinutes:0});window.dispatchEvent(new Event('valvefin:activity'));window.testPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.testPad]})()`)
 if (!process.env.RESUME_PHASE3) {
-await send('Page.navigate', { url: 'http://localhost:5173' })
-await wait(`document.readyState==='complete' && !!document.querySelector('button')`)
+await send('Page.navigate', { url: 'http://localhost:5173/scripts/review-harness.html' })
+await wait(`Boolean(window.reviewMount)`)
 await evaluate(`(async()=>{const m=await import('/src/lib/jellyfin.ts');const c=await import('/src/lib/catalog.ts');const p=await import('/src/lib/preferences.ts');c.rememberProfile(await m.authenticate({serverUrl:'http://127.0.0.1:8096',username:'devin',password:'devin'}));p.savePreferences(p.preferenceDefaults)})()`)
 await send('Page.navigate', { url: 'http://localhost:5173' })
 await wait(`document.querySelectorAll('.featured .title-logo').length===1 && document.querySelectorAll('.section').length>=5`)
@@ -48,13 +48,13 @@ await shot('library')
 await click('.virtual-grid button', 'Valve Test AVC')
 await wait(`document.querySelector('.cinematic .title-logo') && !document.body.innerText.includes('Loading title') && document.querySelector('.detail-meta')?.textContent.includes('Ends at')`)
 await shot('details')
-await click('button', 'Media info')
+await evaluate(`document.querySelector('[aria-label="More"]').click()`)
 await wait(`/h264/i.test(document.querySelector('.media-info')?.textContent)`)
 console.log('PASS movie details settles without lingering Loading; full-bleed backdrop, logo, badges, ends-at and media panel')
 }
 if (run(1)) {
 await wait(`document.querySelectorAll('.section .poster-card').length>0`)
-await click('.section .poster-card', 'Valve Test Performer')
+await click('.section .person-card', 'Valve Test Performer')
 await wait(`document.body.textContent.includes('Filmography') && document.querySelector('.section [aria-label="Valve Test AVC"]')`)
 await shot('person')
 console.log('PASS cast opens person screen with live filmography')
@@ -174,7 +174,7 @@ await evaluate(`window.fetch=window.nativeFetch;localStorage.removeItem('valvefi
 console.log('PASS 5,000-title fixture: offsets 0/60/120/180, bounded virtual DOM, deep-card Back restores focus/scroll, empty/error library states')
 }
 if (run(7)) {
-if (await evaluate(`!!document.querySelector('video')`)) await click('button', '← Back')
+if (await evaluate(`!!document.querySelector('video')`)) await click('.player-top button', 'Back')
 await evaluate(`window.fetch=window.nativeFetch??window.fetch;window.open=window.realWindowOpen??window.open`)
 await click('.nav-rail button', 'Home'); await click('.nav-rail button', 'Movies')
 await wait(`document.querySelector('.virtual-grid [aria-label="Valve Test AVC"]')`)

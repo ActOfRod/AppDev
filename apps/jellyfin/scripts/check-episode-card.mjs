@@ -10,5 +10,7 @@ assert.deepEqual(card.images.map((url) => new URL(url).pathname), ['/jellyfin/It
 assert.equal(episodeCard(session, { ...episode, ParentIndexNumber: 0 }).subtitle, 'S0:E5 · The return')
 assert.deepEqual(episodeCard(session, { Id: 'empty', Name: 'Unknown', Type: 'Episode' }), { title: 'Unknown', subtitle: 'Unknown', images: [] })
 assert.equal(episodeCard(session, { ...episode, SeriesThumbImageTag: undefined }).images[0].includes('/parent/Images/Thumb'), true)
+assert.equal(episodeCard(session, { ...episode, SeriesId: undefined }).images[0].includes('/parent/Images/Thumb'), true)
+assert.equal(episodeCard(session, { ...episode, SeriesThumbImageTag: undefined, ParentThumbImageTag: undefined, ParentBackdropItemId: undefined }).images[0].includes('/series/Images/Backdrop'), true)
 assert.equal(episodeCard(session, { ...episode, SeriesThumbImageTag: undefined, ParentThumbImageTag: undefined, ParentBackdropImageTags: undefined }).images[0].includes('/series/Images/Primary'), true)
 console.log('PASS home episode artwork order: series/parent Thumb, parent Backdrop, series Primary, episode fallback; show title, episode line, specials and empty metadata')

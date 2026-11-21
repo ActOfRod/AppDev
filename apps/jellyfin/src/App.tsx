@@ -66,7 +66,7 @@ export default function App() {
     window.addEventListener('jellyfin:back', back); window.addEventListener('valvefin:context', actions)
     return () => { window.removeEventListener('jellyfin:back', back); window.removeEventListener('valvefin:context', actions) }
   }, [view, context, session])
-  const browse: BrowseView = ['player', 'live', 'prompt', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
+  const browse: BrowseView = ['player', 'live', 'login'].includes(view.screen) ? { screen: 'home' } : view as BrowseView
   const open = (item: JellyfinItem) => setView(item.Type === 'BoxSet' || item.Type === 'CollectionFolder' ? { screen: 'library', library: item, returnTo: browse } : { screen: 'detail', item, returnTo: browse })
   const play = async (item: JellyfinItem, start?: number, source?: string, tracks?: Pick<PlaybackOptions, 'audioStreamIndex' | 'subtitleStreamIndex'>) => {
     if (!session) return

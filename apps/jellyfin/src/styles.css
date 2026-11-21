@@ -481,7 +481,8 @@ h2 {
 .person-card:focus .person-photo, .person-card:hover .person-photo { border-color: white; }
 @media (max-width: 1000px) { .detail-panels { grid-template-columns: 1fr; } }
 .browse-layout:has(.detail-redesign) { display: block; padding-left: 0; }
-.browse-layout:has(.detail-redesign) > .nav-rail { display: none; }
+.browse-layout:has(.detail-redesign) > .nav-rail { transform: translateX(-110%); }
+.browse-layout:has(.detail-redesign) > .nav-rail:focus-within { transform: translateX(0); }
 
 .detail-hero {
   margin: 0 calc(-1 * clamp(1.25rem, 3vw, 2.5rem)) 1.25rem;
