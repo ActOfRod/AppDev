@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface JellyfinDesktopApi {
+  services?: import('../electron/service-types').ServicesApi
   updates: import('../electron/update-types').UpdatesApi
   platform: NodeJS.Platform
   focusWindow: () => Promise<void>

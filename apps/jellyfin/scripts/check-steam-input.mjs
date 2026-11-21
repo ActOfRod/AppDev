@@ -88,6 +88,7 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', setTimeout: () => ({ unref() {} }), process: { platform, execPath: '/ValveFin.exe', argv: ['ValveFin', '--user-data-dir=profile'], env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
     if (name === 'electron') return electron
     if (name === './steam-overlay') return { steamOverlaySwitches }
+    if (name === './services') return { Services: class { resize() {} }, registerServices() {} }
     if (name === './updates') return { ClientUpdates: class { constructor(options) { updateOptions = options } async initialize() {} snapshot() { return { automatic: false } } } }
     if (name === 'node:child_process') return { execFile: (file, args, options, callback) => { assert.equal(file, 'tasklist.exe'); assert.deepEqual([...args], ['/FO', 'CSV', '/NH']); assert.equal(options.windowsHide, true); callback(null, '"ValveFin.exe","100"\r\n"active-setup.exe","200"\r\n') }, spawn: (file, args) => { launches.push({ file, args: [...args] }); return { unref() {}, once(name, callback) { if (name === 'spawn') callback() } } } }
     if (name === 'node:path') return path
