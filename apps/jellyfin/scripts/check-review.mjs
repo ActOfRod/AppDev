@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createLibraryLoader, libraryDefaults, libraryQuery, queryItems } from '../src/lib/catalog.ts'
+import { createPlaybackSession } from '../src/lib/jellyfin.ts'
 
 const storage = new Map()
 globalThis.localStorage = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) }
@@ -48,3 +49,22 @@ assert.ok(!(await random(0)).Items.some((i) => i.Id === deleted))
 globalThis.fetch = async () => Response.json({ Items: [], TotalRecordCount: 0 })
 assert.deepEqual(await createLibraryLoader(session, 'empty', { ...libraryDefaults, sort: 'Random' })(0), { Items: [], TotalRecordCount: 0 })
 console.log('PASS random snapshot: 1123 unique titles, stable pages, empty/end, missing IDs and discovery/detail retries')
+globalThis.document = { createElement: () => ({ canPlayType: (mime) => /avc1|mp4a\.40\.2/.test(mime) ? 'probably' : '' }) }
+const source = { Id: 'source', Container: 'mp4', SupportsDirectPlay: true, DefaultAudioStreamIndex: 1, DefaultSubtitleStreamIndex: 4, MediaStreams: [
+  { Type: 'Video', Index: 0, Codec: 'h264' }, { Type: 'Audio', Index: 1, Codec: 'aac', IsDefault: true },
+  ...['eng', 'fra', 'deu'].map((Language, i) => ({ Type: 'Subtitle', Index: i + 2, Codec: 'subrip', Language, IsForced: true })),
+] }
+globalThis.fetch = async (url) => Response.json(String(url).includes('PlaybackInfo') ? { MediaSources: [source] } : { Id: 'movie', Type: 'Movie', UserData: {}, MediaSources: [source] })
+storage.set('valvefin.preferences', JSON.stringify({ subtitleMode: 'forced', subtitleLanguage: 'fra' }))
+assert.equal((await createPlaybackSession(session, { Id: 'movie' })).selectedSubtitleIndex, 3)
+storage.set('valvefin.preferences', JSON.stringify({ subtitleMode: 'forced', subtitleLanguage: 'spa' }))
+assert.equal((await createPlaybackSession(session, { Id: 'movie' })).selectedSubtitleIndex, 4)
+storage.set('valvefin.preferences', JSON.stringify({ subtitleMode: 'default' }))
+assert.equal((await createPlaybackSession(session, { Id: 'movie' })).selectedSubtitleIndex, 4)
+assert.equal((await createPlaybackSession(session, { Id: 'movie' }, { subtitleStreamIndex: 2 })).selectedSubtitleIndex, 2)
+storage.set('valvefin.preferences', JSON.stringify({ subtitleMode: 'off' }))
+assert.equal((await createPlaybackSession(session, { Id: 'movie' })).selectedSubtitleIndex, null)
+source.MediaStreams = source.MediaStreams.filter((s) => s.Type !== 'Subtitle')
+storage.set('valvefin.preferences', JSON.stringify({ subtitleMode: 'forced' }))
+assert.equal((await createPlaybackSession(session, { Id: 'movie' })).selectedSubtitleIndex, null)
+console.log('PASS forced subtitles prefer language then server default; explicit/off/missing tracks respected')

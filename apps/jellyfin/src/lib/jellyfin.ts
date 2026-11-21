@@ -771,9 +771,14 @@ export async function createPlaybackSession(
     options?.audioStreamIndex !== undefined
       ? options.audioStreamIndex
       : probeSource.MediaStreams?.find((s) => s.Type === 'Audio' && prefs.audioLanguage && s.Language === prefs.audioLanguage)?.Index ?? pickPreferredAudioIndex(probeSource.MediaStreams ?? [])
+  const subtitleStreams = probeSource.MediaStreams?.filter((s) => s.Type === 'Subtitle') ?? []
+  const forcedStreams = subtitleStreams.filter((s) => s.IsForced)
+  const forcedSubtitle = forcedStreams.find((s) => prefs.subtitleLanguage && s.Language === prefs.subtitleLanguage)
+    ?? forcedStreams.find((s) => s.Index === probeSource.DefaultSubtitleStreamIndex)
+    ?? forcedStreams.find((s) => s.IsDefault) ?? forcedStreams[0]
   const subtitle = options?.subtitleStreamIndex !== undefined
     ? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.Index === options.subtitleStreamIndex)
-    : prefs.subtitleMode === 'off' ? undefined : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && s.IsForced) ?? (prefs.subtitleMode === 'forced' ? undefined : probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && prefs.subtitleLanguage && s.Language === prefs.subtitleLanguage) ?? probeSource.MediaStreams?.find((s) => s.Type === 'Subtitle' && (s.Index === probeSource.DefaultSubtitleStreamIndex || s.IsDefault)))
+    : prefs.subtitleMode === 'off' ? undefined : forcedSubtitle ?? (prefs.subtitleMode === 'forced' ? undefined : subtitleStreams.find((s) => prefs.subtitleLanguage && s.Language === prefs.subtitleLanguage) ?? subtitleStreams.find((s) => s.Index === probeSource.DefaultSubtitleStreamIndex || s.IsDefault))
   const defaultAudioIndex = probeSource.DefaultAudioStreamIndex ?? probeSource.MediaStreams?.find((s) => s.Type === 'Audio' && s.IsDefault)?.Index
   const video = probeSource.MediaStreams?.find((s) => s.Type === 'Video')
   const qualityLimited = Boolean((options?.maxBitrate && (!probeSource.Bitrate || probeSource.Bitrate > options.maxBitrate)) ||
