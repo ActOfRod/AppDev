@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import ts from 'typescript'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createPadReader } from '../src/lib/gamepad.ts'
 import { watchingRows } from '../src/lib/homeRows.ts'
 import { steamOverlaySwitches } from '../electron/steam-overlay.ts'
@@ -55,13 +56,14 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], ['win32', false, true], ['linux', false, false], ['linux', true, false]]) {
   const switches = new Map([['disable-features', 'ExistingFeature']]), handlers = new Map()
   const appEvents = new Map(), windowEvents = new Map()
+  let updateOptions, launches = [], quits = 0, relaunched
   let window, focus = 0, rendererFocus = 0, focused = true, nativeFullscreenCalls = 0, flashes = 0, minimized = 0, closed = 0, maximized = false
   const modes = []
   let bounds = { x: 120, y: 80, width: 1280, height: 720 }, nativeFullscreen = false
   const displayBounds = { x: 1920, y: 0, width: 1920, height: 1080 }
   const changes = []
   const electron = {
-    app: { commandLine: { appendSwitch: (k, v = '') => switches.set(k, v), getSwitchValue: (k) => switches.get(k) ?? '' }, getPath: () => '/unused', requestSingleInstanceLock: () => true, on: (name, callback) => appEvents.set(name, callback), whenReady: () => Promise.resolve(), isPackaged: true },
+    app: { commandLine: { appendSwitch: (k, v = '') => switches.set(k, v), getSwitchValue: (k) => switches.get(k) ?? '' }, getPath: () => '/unused', getVersion: () => '0.2.3', quit: () => quits++, relaunch: (value) => { relaunched = value }, requestSingleInstanceLock: () => true, on: (name, callback) => appEvents.set(name, callback), whenReady: () => Promise.resolve(), isPackaged: true },
     BrowserWindow: class {
       constructor(options) { this.options = options; window = this; nativeFullscreen = options.fullscreen; this.webContents = { focus: () => rendererFocus++, on() {}, setWindowOpenHandler() {}, send: (channel, value) => { assert.equal(channel, 'window:fullscreen-changed'); modes.push(value) } } }
       focus() { focus++ }
@@ -83,15 +85,34 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
     screen: { getDisplayMatching: () => ({ bounds: displayBounds }) },
     ipcMain: { handle: (name, callback) => handlers.set(name, callback) }, powerSaveBlocker: {}, shell: {},
   }
-  vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', process: { platform, env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
+  vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', setTimeout: () => ({ unref() {} }), process: { platform, execPath: '/ValveFin.exe', argv: ['ValveFin', '--user-data-dir=profile'], env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
     if (name === 'electron') return electron
     if (name === './steam-overlay') return { steamOverlaySwitches }
+    if (name === './updates') return { ClientUpdates: class { constructor(options) { updateOptions = options } async initialize() {} snapshot() { return { automatic: false } } } }
+    if (name === 'node:child_process') return { execFile: (file, args, options, callback) => { assert.equal(file, 'tasklist.exe'); assert.deepEqual([...args], ['/FO', 'CSV', '/NH']); assert.equal(options.windowsHide, true); callback(null, '"ValveFin.exe","100"\r\n"active-setup.exe","200"\r\n') }, spawn: (file, args) => { launches.push({ file, args: [...args] }); return { unref() {}, once(name, callback) { if (name === 'spawn') callback() } } } }
     if (name === 'node:path') return path
+    if (name === 'node:url') return { pathToFileURL }
     if (name === 'node:fs') return { readFileSync: () => JSON.stringify({ fullscreen: launchFullscreen }) }
     if (name === 'node:dgram') return {}
     throw Error(`Unexpected import ${name}`)
   } })
   await Promise.resolve()
+  window.webContents.mainFrame = { url: 'file:///dist/index.html' }
+  await assert.rejects(handlers.get('updates:command')({ sender: {} }, 'install'), /Unauthorized/)
+  await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: {} }, 'install'), /Unauthorized/)
+  await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'automatic', 'true'), /Invalid/)
+  window.webContents.mainFrame.url = 'https://untrusted.invalid'
+  await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'state'), /origin/)
+  window.webContents.mainFrame.url = 'file:///dist/index.html'
+  if (platform === 'win32') assert.deepEqual([...(await updateOptions.runningInstallers())], ['ValveFin.exe', 'active-setup.exe'])
+  else assert.equal(updateOptions.runningInstallers, undefined)
+  await updateOptions.launch('verified-setup.exe', 'nsis')
+  assert.deepEqual(launches, [{ file: 'verified-setup.exe', args: ['--updated', '/S', '--force-run'] }])
+  assert.equal(quits, 1)
+  await updateOptions.launch('/Steam.AppImage', 'appimage')
+  assert.equal(relaunched.execPath, '/Steam.AppImage')
+  assert.deepEqual([...relaunched.args], ['--user-data-dir=profile'])
+  assert.equal(quits, 2)
   assert.equal(switches.has('in-process-gpu'), platform === 'win32')
   assert.equal(switches.has('disable-direct-composition'), platform === 'win32')
   for (const flag of ['disable-renderer-backgrounding', 'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows']) assert.equal(switches.has(flag), platform === 'win32')
@@ -152,6 +173,7 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
 }
 console.log('PASS main dispatch: Windows normal-z-order borderless fullscreen covers the matching display and restores bounds; native/HTML fullscreen disabled; background focus/toggle/relaunch never raise the window; foreground renderer focus only; Linux VA-API/Game Mode retained')
 console.log('PASS Windows retains in-process-gpu/disable-direct-composition; disables renderer/timer/occluded-window backgrounding and CalculateNativeWinOcclusion; preserves existing disabled features; backgroundThrottling=false; Linux unchanged')
+console.log('PASS update IPC rejects foreign senders/subframes/origins and invalid preferences; NSIS uses silent update/force-run flags before quitting; AppImage relaunch keeps launch arguments')
 
 const preload = ts.transpileModule(await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
 let desktop

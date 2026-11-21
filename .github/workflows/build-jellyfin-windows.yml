@@ -78,6 +78,9 @@ jobs:
           pattern: valvefin-*
           merge-multiple: true
           path: release-artifacts
+      - name: Generate SHA-256 update checksums
+        working-directory: release-artifacts
+        run: node -e "const fs=require('fs'),crypto=require('crypto'); fs.writeFileSync('SHA256SUMS.txt',fs.readdirSync('.').filter(n=>n.startsWith('ValveFin')&&fs.statSync(n).isFile()).sort().map(n=>crypto.createHash('sha256').update(fs.readFileSync(n)).digest('hex')+'  '+n+'\n').join(''))"
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
@@ -87,3 +90,4 @@ jobs:
             release-artifacts/ValveFin-Setup-*.exe
             release-artifacts/ValveFin-*-x86_64.AppImage
             release-artifacts/ValveFin-*.tar.gz
+            release-artifacts/SHA256SUMS.txt

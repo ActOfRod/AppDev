@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><title>ValveFin updates check</title></head><body><div id="root"></div><script type="module">
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import '../src/styles.css'
+import { UpdatesProvider, UpdatesSection, UpdateNotice } from '../src/components/Updates'
+import { useControllerNavigation } from '../src/hooks/useControllerNavigation'
+window.pad = {index: 0, connected: true, axes: [0,0], buttons: Array.from({length:18},()=>({pressed:false,value:0}))}
+navigator.getGamepads = () => [pad]
+window.updateState = {currentVersion:'0.2.3',automatic:true,status:'idle',installable:true,received:0,total:100}
+window.subscribers = new Set()
+window.emitUpdate = (patch) => {Object.assign(updateState,patch);for(const cb of subscribers)cb(structuredClone(updateState))}
+window.release = {version:'0.2.4',notes:'A new ValveFin release.\n\nReliable playback and verified client updates.\n\n\x3cscript>Not HTML\x3c/script>',url:'https://github.com/ActOfRod/AppDev/releases/tag/valvefin-v0.2.4'}
+window.scenario = 'available'
+window.jellyfinDesktop = {updates:{
+ state: async()=>structuredClone(updateState),
+ subscribe: cb=>{subscribers.add(cb);return()=>subscribers.delete(cb)},
+ check:async()=>{if(scenario==='offline')emitUpdate({status:'error',error:'Unable to reach the update server. Check your connection and try again.'});else emitUpdate({status:scenario==='same'?'current':'available',release:scenario==='same'?undefined:release,error:undefined})},
+ automatic:async automatic=>emitUpdate({automatic}),
+ install:async()=>{emitUpdate({status:'downloading',received:43});await new Promise(resolve=>window.finishDownload=resolve)},
+ cancel:async()=>{emitUpdate({status:'available',received:0});finishDownload?.()},
+ openRelease:async()=>window.openedRelease=release.url,
+}}
+function Fixture(){const [screen,setScreen]=React.useState('settings');window.setPlayback=setScreen;const playing=screen==='player'||screen==='live';useControllerNavigation(!playing);return React.createElement(UpdatesProvider,null,React.createElement('main',{className:'app-shell'},React.createElement('button',{id:'unchanged-focus',className:'ghost'},'Back'),React.createElement('h1',null,screen),React.createElement(UpdatesSection)),React.createElement(UpdateNotice,{suppressed:playing}))}
+createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(Fixture)))
+</script></body></html>

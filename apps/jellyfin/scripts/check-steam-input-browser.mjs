@@ -59,7 +59,7 @@ try {
     await window.reviewMount('PlayerScreen',{session:window.steamSession,item:window.steamMovie,startPositionTicks:0,onBack:()=>window.steamBack++})`)
   await wait(`document.querySelector('video')?.readyState>=2&&!document.querySelector('video').paused`)
   for (let i = 0; i < 18; i++) {
-    if (i === 9) continue
+    if (i === 0 || i === 9) continue
     await hide()
     await evaluate(`document.querySelector('video').tabIndex=-1;document.querySelector('video').focus()`)
     const before = await evaluate('document.querySelector("video").currentTime')
@@ -79,15 +79,16 @@ try {
   await hide()
   await evaluate(`window.steamPads[3].buttons[0].pressed=true`)
   for (let i = 0; i < 8; i++) await frames()
-  assert.equal(await evaluate(`document.querySelector('video').paused`), false)
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true)
   await neutral(`window.steamPads[3].buttons[0].pressed=false`)
-  await evaluate(`document.querySelector('button[aria-label="Pause"]').focus()`)
+  await evaluate(`document.querySelector('button[aria-label="Play"]').focus()`)
   await pad(0)
-  await wait(`document.querySelector('video').paused`)
-  await pad(9)
   await wait(`!document.querySelector('video').paused`)
-  console.log('PASS player reads virtual pad 3 with idle pad 0: every button, D-pad, both sticks reveal without acting; held A cannot leak through; next A activates focused Pause even after video focus')
-  for (const key of ['Enter', 'ArrowLeft', 'ArrowDown', 'Escape', 'c', 'q', 'F11']) {
+  await pad(9)
+  await wait(`document.querySelector('video').paused`)
+  await pad(9); await wait(`!document.querySelector('video').paused`)
+  console.log('PASS hidden A immediately pauses and reveals; held A toggles only once; visible A activates focused Play; other buttons/sticks reveal only, including virtual pad 3')
+  for (const key of ['ArrowLeft', 'ArrowDown', 'Escape', 'c', 'q', 'F11']) {
     await hide()
     await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},bubbles:true,cancelable:true}))`)
     await wait(`document.querySelector('.osd-visible')`)
@@ -102,7 +103,9 @@ try {
   await wait(`document.querySelector('video').paused`)
   await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true}))`)
   await wait(`!document.querySelector('video').paused`)
-  console.log('PASS any key/mouse motion reveals; hidden Enter/seek/back/menu/fullscreen keys are consumed; Start and Space remain play/pause')
+  await hide(); await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))`); await wait(`document.querySelector('video').paused`)
+  await hide(); await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))`); await wait(`!document.querySelector('video').paused`)
+  console.log('PASS hidden Enter immediately toggles pause/resume and reveals; other keys/mouse reveal; Start and Space remain play/pause')
   await hide(); await pad(1)
   assert.equal(await evaluate('window.steamBack'), 0)
   await pad(1); await wait('window.steamBack===1')
@@ -115,11 +118,10 @@ try {
   console.log('PASS hidden B/Escape reveal only; next B/Escape exits playback instead of trapping the controller in a show/hide loop')
   await hide(); await bothA()
   await wait(`document.querySelector('.osd-visible')`)
-  assert.equal(await evaluate(`document.querySelector('video').paused`), false)
-  await evaluate(`document.querySelector('button[aria-label="Pause"]').focus()`)
-  await bothA(); await wait(`document.querySelector('video').paused`)
-  await pad(9); await wait(`!document.querySelector('video').paused`)
-  console.log('PASS mirrored physical/virtual pad presses reveal once, then activate once without double toggling playback')
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true)
+  await evaluate(`document.querySelector('button[aria-label="Play"]').focus()`)
+  await bothA(); await wait(`!document.querySelector('video').paused`)
+  console.log('PASS mirrored physical/virtual A toggles once when hidden and activates once when visible, without double toggling playback')
 
   await evaluate(`window.nativeSteamFetch=window.fetch;window.steamLatestRequests=0;window.steamFocus=0;window.steamDelayLatest=false;window.steamFailResume=false;window.steamFailLatest=false;
     window.jellyfinDesktop={platform:'win32',setPlaybackActive:async()=>false,setLaunchFullscreen:async()=>{},isFullscreen:async()=>false,focusWindow:async()=>{window.steamFocus++}};

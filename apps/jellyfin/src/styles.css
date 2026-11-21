@@ -1,5 +1,8 @@
 @import './theme.css';
 
+.update-notice { position: fixed; bottom: 1rem; right: 1rem; z-index: 90; max-width: min(38rem, 90vw); max-height: 80vh; overflow: auto; padding: 1rem; background: var(--bg-overlay); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: var(--text-dim); }
+
 :root {
   font-family: var(--font);
   font-optical-sizing: auto;

@@ -1,8 +1,11 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell } from 'electron'
 import path from 'node:path'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
+import { ClientUpdates } from './updates'
 
 for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
 if (process.platform === 'win32') {
@@ -26,6 +29,53 @@ process.env.VITE_PUBLIC = app.isPackaged
   : path.join(process.env.DIST, '../public')
 
 let mainWindow: BrowserWindow | null = null
+let updates: ClientUpdates | undefined
+let updatesReady = Promise.resolve()
+
+function initializeUpdates() {
+  const mode = !app.isPackaged || process.arch !== 'x64' || process.env.PORTABLE_EXECUTABLE_FILE ? 'manual'
+    : process.platform === 'linux' && process.env.APPIMAGE ? 'appimage'
+    : process.platform === 'win32' && existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall ValveFin.exe')) ? 'nsis' : 'manual'
+  updates = new ClientUpdates({ version: app.getVersion(), mode, target: process.env.APPIMAGE,
+    directory: path.join(app.getPath('userData'), 'updates'),
+    runningInstallers: process.platform === 'win32' ? () => new Promise<string[]>((resolve, reject) => {
+      execFile('tasklist.exe', ['/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+        if (error) { reject(error); return }
+        const names = stdout.split(/\r?\n/).flatMap((line) => { const match = /^"([^"]+)"/.exec(line); return match ? [match[1]] : [] })
+        if (!names.some((name) => name.toLowerCase() === path.basename(process.execPath).toLowerCase())) { reject(Error('Unable to inspect running installers')); return }
+        resolve(names)
+      })
+    }) : undefined,
+    notify: (state) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updates:state', state) },
+    launch: async (file, type) => {
+      if (type === 'appimage') app.relaunch({ execPath: file, args: process.argv.slice(1) })
+      else await new Promise<void>((resolve, reject) => {
+        const child = spawn(file, ['--updated', '/S', '--force-run'], { detached: true, stdio: 'ignore' })
+        child.once('error', reject); child.once('spawn', () => { child.unref(); resolve() })
+      })
+      app.quit()
+    },
+  })
+  updatesReady = updates.initialize()
+  void updatesReady.then(() => { if (app.isPackaged) setTimeout(() => { if (updates?.snapshot().automatic) void updates.check() }, 10000).unref() })
+}
+
+ipcMain.handle('updates:command', async (event, command: unknown, value: unknown) => {
+  if (!updates || event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw Error('Unauthorized update request')
+  const source = event.senderFrame?.url
+  let trusted = false
+  try { trusted = Boolean(source && (VITE_DEV_SERVER_URL ? new URL(source).origin === new URL(VITE_DEV_SERVER_URL).origin : source.split(/[?#]/)[0] === pathToFileURL(path.join(process.env.DIST!, 'index.html')).href)) } catch { /* Invalid origins are not trusted. */ }
+  if (!trusted) throw Error('Unauthorized update origin')
+  await updatesReady
+  if (command === 'state') return updates.snapshot()
+  if (!mainWindow.isFocused()) throw Error('Activate ValveFin before changing updates')
+  if (command === 'check') return updates.check()
+  if (command === 'install') return updates.install()
+  if (command === 'cancel') return updates.cancel()
+  if (command === 'automatic' && typeof value === 'boolean') return updates.automatic(value)
+  if (command === 'open') { const url = updates.snapshot().release?.url; if (url) await shell.openExternal(url); return }
+  throw Error('Invalid update command')
+})
 let borderlessFullscreen = false
 let windowedBounds: Electron.Rectangle | undefined
 let windowedMaximized = false
@@ -160,6 +210,7 @@ ipcMain.handle('servers:discover', async (event) => {
 
 app.whenReady().then(() => {
   if (!primaryInstance) return
+  initializeUpdates()
   createWindow()
 
   app.on('activate', () => {

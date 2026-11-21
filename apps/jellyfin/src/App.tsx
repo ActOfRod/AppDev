@@ -17,6 +17,7 @@ import { channels, type LiveItem } from './lib/liveTv'
 import { Card } from './components/Browse'
 import { MusicPlayer, MusicScreen } from './components/MusicPlayer'
 import { Screensaver } from './components/Screensaver'
+import { UpdateNotice } from './components/Updates'
 import './styles.css'
 import './liveTv.css'
 
@@ -100,6 +101,7 @@ export default function App() {
     {session && <MusicPlayer key={session.userId + session.serverUrl} session={session} queue={queue} setQueue={setQueue} suspended={view.screen === 'player' || view.screen === 'live'} />}
     {session && <Screensaver session={session} disabled={view.screen === 'player' || view.screen === 'live' || !!context} minutes={prefs.idleMinutes} />}
     {context && session && <div className="modal-shade"><section className="dialog" role="dialog" data-modal aria-label="Title actions"><h2>{context.Name}</h2><div className="context-actions"><button className="primary" autoFocus onClick={() => void play(context)}>Play / open</button><button className="ghost" onClick={async () => { try { await setPlayed(session, context, !context.UserData?.Played); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.Played ? 'Mark unwatched' : 'Mark watched'}</button><button className="ghost" onClick={async () => { try { await setFavorite(session, context, !context.UserData?.IsFavorite); setContext(null) } catch (e) { setMessage(String(e)) } }}>{context.UserData?.IsFavorite ? 'Remove favorite' : 'Favorite'}</button>{context.SeriesId && <button className="ghost" onClick={async () => { try { const i = await getItem(session, context.SeriesId!); setContext(null); open(i) } catch (e) { setMessage(String(e)) } }}>Go to series</button>}<button className="ghost" onClick={() => { setContext(null); requestAnimationFrame(() => focusBeforeContext.current?.focus()) }}>Close · B</button></div>{message && <p className="error">{message}</p>}</section></div>}
+    <UpdateNotice suppressed={view.screen === 'player' || view.screen === 'live'} />
   </>
 }
 

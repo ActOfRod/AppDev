@@ -19,7 +19,7 @@ Controller-first Jellyfin client for **Windows and Linux/SteamOS**, designed for
 
 Open your Live TV library. LB/RB switch tabs; in the Guide, D-pad/stick moves across programs/channels and scrolls the time axis. Up from the first channel reaches the day picker. A plays an airing program/channel or opens future-program recording controls. B closes details before leaving Live TV. Schedule and Series let you cancel recordings.
 
-During live playback, LB/RB change channels; D-pad Up/Down also changes channels when the OSD is hidden. Other input reveals the OSD first; Start toggles pause, A activates the focused control, B reveals/exits and Y toggles fullscreen. The OSD shows current/next programs and broadcast progress, not an unsupported VOD seek range. Home On Now can be disabled in Settings.
+During live playback, LB/RB change channels; D-pad Up/Down also changes channels when the OSD is hidden. Hidden A/Enter immediately toggles play/pause and reveals controls; visible A/Enter activates the focused control. Other input reveals the OSD first; Start toggles pause, B reveals/exits and Y toggles fullscreen. The OSD shows current/next programs and broadcast progress, not an unsupported VOD seek range. Home On Now can be disabled in Settings.
 
 The local development fixture requires Docker Jellyfin at `127.0.0.1:8096`, the existing `devin` test account, ffmpeg and Docker bridge networking. Run `node --experimental-strip-types scripts/setup-livetv.mjs` and leave it running. It serves four looping HLS channels, logos, an M3U and XMLTV with series/movie/sports/kids/news and NEW flags for at least the next two days, on the private Docker bridge only. Ctrl+C stops the fixture processes. Files stay in `/home/ubuntu/jellyfin-test/livetv`.
 
@@ -34,16 +34,16 @@ The portable `ValveFin.exe` is an NSIS launcher: it extracts the app into a temp
 Download from [Releases](https://github.com/ActOfRod/AppDev/releases) when available:
 
 - **ValveFin.exe**: portable; keep it in a permanent, writable folder and run it.
-- **ValveFin-Setup-0.2.2.exe**: optional NSIS installer.
+- **ValveFin-Setup-0.2.3.exe**: optional NSIS installer.
 
 Unsigned builds can trigger SmartScreen. Verify the source/download before choosing **More info → Run anyway**. Add the portable or installed executable with **Steam → Games → Add a Non-Steam Game**, then launch from Big Picture. Preferences live in your user profile, not beside the executable.
 
 ## SteamOS / Steam Deck install
 
-1. Switch to **Desktop Mode** and download **ValveFin-0.2.2-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
+1. Switch to **Desktop Mode** and download **ValveFin-0.2.3-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
 2. Dolphin → Properties → Permissions → **Is executable**, or run:
    ```bash
-   chmod +x ~/Applications/ValveFin-0.2.2-x86_64.AppImage
+   chmod +x ~/Applications/ValveFin-0.2.3-x86_64.AppImage
    ```
 3. Run it once; sign in using the controller keyboard, a physical keyboard or Quick Connect.
 4. Steam → **Add a Non-Steam Game → Browse**, select the AppImage (show all files), and name it ValveFin. **Do not force Proton**: this is a native Linux app.
@@ -59,9 +59,9 @@ Without FUSE, set the Steam shortcut's launch options to:
 --appimage-extract-and-run
 ```
 
-Or run `./ValveFin-0.2.2-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
+Or run `./ValveFin-0.2.3-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
 
-The alternative **ValveFin-0.2.2-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
+The alternative **ValveFin-0.2.3-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
 
 Linux VA-API decode is enabled where Electron/Mesa/drivers support it; unsupported codecs fall back to software decoding or Jellyfin transcoding. Hardware decode and physical-controller behavior should be checked on the target device.
 
@@ -97,7 +97,18 @@ Build on the matching OS where possible. Windows cross-builds on Linux need Wine
 
 The [Build ValveFin workflow](../../.github/workflows/build-jellyfin-windows.yml) builds on `windows-latest` and `ubuntu-latest` for relevant PRs, main pushes and manual dispatch. Download `valvefin-windows` / `valvefin-linux` workflow artifacts for untagged builds.
 
-Maintainers can publish all four packages by pushing **`valvefin-v0.2.2`** after checking the matching package version. Tag builds validate the version and create a GitHub Release only after both platforms succeed. Builds are unsigned; there is no automatic updater.
+Maintainers can publish all four packages by pushing **`valvefin-v0.2.3`** after checking the matching package version. Tag builds validate the version and publish packages plus `SHA256SUMS.txt` only after both platforms succeed. Builds are unsigned. SHA-256 checksums detect corrupt downloads; they are not code signatures.
+
+## Client updates
+
+Settings → Updates checks stable `valvefin-v*` releases from ActOfRod/AppDev. Startup checks default to On and announce available updates without moving focus; they never download or install automatically. Release notes are paged for gamepad use. Downloads show progress and can be cancelled before installation. Offline and GitHub rate-limit errors are shown in Settings.
+
+Installed Windows NSIS builds download the matching Setup executable, verify SHA-256, then start the silent installer and quit. The installer restarts ValveFin. Linux AppImages download beside the current file, verify SHA-256, mark it executable and atomically replace the same path before relaunch, preserving the Steam shortcut. The AppImage and its containing directory must be writable; symlink targets are refused. Portable Windows, Linux tar/unpacked and development builds only open the release page. Releases without a matching checksums asset cannot be installed in-app. Network, filesystem and installer actions run only in the main process through validated IPC.
+
+## 0.2.3
+
+- Hidden player OSD: gamepad A or Enter immediately toggles play/pause and reveals controls, for both VOD and Live TV. Visible A/Enter still activates the focused control.
+- Added verified, cancellable desktop updates and optional startup checks. Windows Steam overlay compatibility from 0.2.2 is retained.
 
 Integration scripts in `scripts/check-phase*.mjs` expect the local test Jellyfin at port 8096 and, for browser/Electron checks, the debugging endpoints specified in each script. Run API checks with `node --experimental-strip-types scripts/check-phase3.mjs`. They mutate/restore test-user state; do not point them at production.
 
