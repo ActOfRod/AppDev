@@ -11,20 +11,10 @@ const tracks = (await queryItems(session, { IncludeItemTypes: 'Audio', SortBy: '
 const target = (await (await fetch('http://localhost:29229/json/list')).json()).find((p) => p.type === 'page')
 const socket = new WebSocket(target.webSocketDebuggerUrl)
 await new Promise((r) => socket.addEventListener('open', r, { once: true }))
-const harness = `<html><body><div id="root"></div><script type="module">
-import RefreshRuntime from '/@react-refresh';
-RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;
-import React from '/node_modules/.vite/deps/react.js';
-import {createRoot} from '/node_modules/.vite/deps/react-dom_client.js';
-import '/src/styles.css';
-const root=createRoot(document.getElementById('root'));let revision=0;
-window.reviewMount=async(name,props)=>{const module=await import('/src/'+(name==='MusicPlayer'?'components/MusicPlayer':'screens/'+name)+'.tsx');root.render(React.createElement(module[name],{...props,key:++revision}));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
-</script></body></html>`
 let id = 0, savedStorage
 const pending = new Map()
 socket.addEventListener('message', ({ data }) => {
   const m = JSON.parse(data)
-  if (m.method === 'Fetch.requestPaused') { void send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'text/html' }], body: Buffer.from(harness).toString('base64') }); return }
   const p = pending.get(m.id)
   if (!p) return
   pending.delete(m.id); clearTimeout(p.timer)
@@ -36,13 +26,14 @@ const send = (method, params = {}) => new Promise((resolve, reject) => {
   pending.set(request, { resolve, reject, timer }); socket.send(JSON.stringify({ id: request, method, params }))
 })
 const evaluate = async (expression) => {
-  const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true })
+  const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true, replMode: true })
   if (r.exceptionDetails) throw Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
   return r.result.value
 }
 const wait = async (expression) => {
   for (let i = 0; i < 300; i++) { if (await evaluate(`Boolean(${expression})`)) return; await new Promise((r) => setTimeout(r, 100)) }
-  throw Error('Timed out: ' + expression)
+  const diagnostic = await evaluate(`({text:document.body.innerText.slice(0,900),video:document.querySelector('video')&&{time:document.querySelector('video').currentTime,duration:document.querySelector('video').duration,ready:document.querySelector('video').readyState,paused:document.querySelector('video').paused,error:document.querySelector('video').error?.code,src:document.querySelector('video').currentSrc.split('?')[0]},requests:performance.getEntriesByType('resource').filter(r=>r.name.includes(':8096')).map(r=>({path:r.name.split('?')[0],duration:r.duration}))})`)
+  throw Error('Timed out: ' + expression + ' ' + JSON.stringify(diagnostic))
 }
 const click = async (text) => {
   const button = `[...document.querySelectorAll('button')].find(b=>!b.disabled&&b.textContent.trim()===${JSON.stringify(text)})`
@@ -56,8 +47,7 @@ const pressA = async (condition) => {
 }
 try {
   await send('Page.enable')
-  await send('Fetch.enable', { patterns: [{ urlPattern: '*localhost:5173/review-harness', resourceType: 'Document' }] })
-  await send('Page.navigate', { url: 'http://localhost:5173/review-harness' })
+  await send('Page.navigate', { url: 'http://localhost:5173/scripts/review-harness.html' })
   await wait('window.reviewMount')
   savedStorage = await evaluate('JSON.stringify({...localStorage})')
   await evaluate(`window.reviewNativeFetch=window.fetch;window.reviewMode='pending';window.reviewPolls=0;window.reviewSuccess=0;window.reviewReports=[];window.fetch=(input,init)=>{
@@ -85,7 +75,9 @@ try {
   await wait('window.reviewSuccess===1')
   console.log('PASS Quick Connect pending/cancel, approved exchange failure surfaces error, retry succeeds')
   await evaluate(`window.reviewPad={connected:true,axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false}))};navigator.getGamepads=()=>[window.reviewPad];window.reviewNext=0;
-    window.reviewEpisodePlayer=()=>window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewEpisode,onBack:()=>{},onNext:()=>window.reviewNext++,startPositionTicks:380000000});await window.reviewEpisodePlayer()`)
+    window.reviewEpisodePlayer=()=>window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewEpisode,onBack:()=>{},onNext:()=>window.reviewNext++,startPositionTicks:0});await window.reviewEpisodePlayer()`)
+  await wait(`document.querySelector('video')?.readyState>=2`)
+  await evaluate(`document.querySelector('video').currentTime=document.querySelector('video').duration-25`)
   await wait(`!!document.querySelector('.up-next') && document.querySelector('video').readyState>=2`)
   await evaluate(`document.querySelector('video').pause()`)
   await wait(`!!document.querySelector('button[aria-label="Play"]')`)
@@ -96,6 +88,8 @@ try {
   await pressA(`!document.querySelector('.up-next')`)
   assert.equal(await evaluate('window.reviewNext'), 0)
   await evaluate('await window.reviewEpisodePlayer()')
+  await wait(`document.querySelector('video')?.readyState>=2`)
+  await evaluate(`document.querySelector('video').currentTime=document.querySelector('video').duration-25`)
   await wait(`document.activeElement?.textContent==='Play now · A'`)
   await pressA('window.reviewNext===1')
   console.log('PASS Up Next gamepad A activates focused Play/Pause and Cancel; default Play now still advances')
@@ -105,11 +99,11 @@ try {
   await wait(`window.reviewReports.some(r=>r.url.endsWith('/Progress')&&r.body.IsPaused===false)`)
   await evaluate(`document.querySelector('audio').pause()`)
   await wait(`window.reviewReports.some(r=>r.url.endsWith('/Progress')&&r.body.IsPaused===true)`)
-  await evaluate(`const a=document.querySelector('audio');a.currentTime=a.duration-0.15;await a.play()`)
+  await evaluate(`{const a=document.querySelector('audio');a.currentTime=a.duration-0.15;await a.play()}`)
   await wait(`document.querySelector('audio')?.currentSrc.includes(window.reviewTracks[1].Id) && !document.querySelector('audio').paused && document.querySelector('audio').readyState>=2`)
-  await evaluate(`const a=document.querySelector('audio');a.currentTime=a.duration-0.15;await a.play()`)
-  await wait(`document.querySelector('audio').ended && window.reviewReports.filter(r=>r.url.endsWith('/Stopped')).length===2`)
-  assert.deepEqual(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Stopped')).map(r=>r.body.ItemId)`), tracks.map((t) => t.Id))
+  await evaluate(`{const a=document.querySelector('audio');a.currentTime=a.duration-0.15;await a.play()}`)
+  await wait(`document.querySelector('audio').ended && window.reviewReports.filter(r=>r.url.endsWith('/Stopped')&&window.reviewTracks.some(t=>t.Id===r.body.ItemId)).length===2`)
+  assert.deepEqual(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Stopped')&&window.reviewTracks.some(t=>t.Id===r.body.ItemId)).map(r=>r.body.ItemId)`), tracks.map((t) => t.Id))
   assert.equal(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Playing')).length`), 2)
   console.log('PASS music periodic/pause/resume reports and natural two-track queue completion send one stop per track')
   await evaluate(`window.setInterval=window.reviewSetInterval;await window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewMovie,onBack:()=>{},onNext:()=>{},startPositionTicks:120000000})`)
@@ -129,7 +123,6 @@ try {
   console.log('PASS quality reload preserves paused/playing state and position; completed music does not double-stop on unmount')
 } finally {
   if (savedStorage) await evaluate(`localStorage.clear();for(const[k,v]of Object.entries(${savedStorage}))localStorage.setItem(k,v)`)
-  await send('Fetch.disable')
   await send('Page.navigate', { url: 'http://localhost:5173' })
   socket.close()
 }
