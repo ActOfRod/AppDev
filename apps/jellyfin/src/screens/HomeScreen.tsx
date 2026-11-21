@@ -6,24 +6,29 @@ import { homeRowOrder, loadPreferences } from '../lib/preferences'
 import { useScreenMemory } from '../hooks/useScreenMemory'
 import { watchingRows } from '../lib/homeRows'
 
+type HomeRows = Record<string, { name: string; items: JellyfinItem[]; error?: string }>
+let snapshot: { session: JellyfinSession; rows: HomeRows; featured: JellyfinItem[]; libraries: JellyfinItem[] } | undefined
+
 export function HomeScreen({ session, open, resume, play }: { session: JellyfinSession; open: (i: JellyfinItem) => void; resume: (i: JellyfinItem) => void; play: (i: JellyfinItem) => void }) {
   useScreenMemory('home')
-  const [rows, setRows] = useState<Record<string, { name: string; items: JellyfinItem[]; error?: string }>>({})
-  const [featured, setFeatured] = useState<JellyfinItem[]>([])
-  const [libraries, setLibraries] = useState<JellyfinItem[]>([])
+  const cached = snapshot?.session === session ? snapshot : undefined
+  const [rows, setRows] = useState<HomeRows>(() => cached?.rows ?? {})
+  const [featured, setFeatured] = useState<JellyfinItem[]>(() => cached?.featured ?? [])
+  const [libraries, setLibraries] = useState<JellyfinItem[]>(() => cached?.libraries ?? [])
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const prefs = loadPreferences()
   const watching = watchingRows(rows.resume?.items ?? [], rows.next?.items ?? [], prefs.mergeNextUp)
-  const displayRows = { ...rows,
+  const displayRows: typeof rows = { ...rows,
     ...(rows.resume || (prefs.mergeNextUp && rows.next) ? { resume: { ...rows.resume, name: 'Continue Watching', items: watching.resume, error: rows.resume?.error || (prefs.mergeNextUp ? rows.next?.error : undefined) } } : {}),
     ...(rows.next ? { next: { ...rows.next, items: watching.next } } : {}),
   }
+  useEffect(() => { snapshot = { session, rows, featured, libraries } }, [session, rows, featured, libraries])
   useEffect(() => {
     let active = true
     const load = async (id: string, name: string, request: Promise<JellyfinItem[]>) => {
       try { const items = await request; if (active) setRows((old) => ({ ...old, [id]: { name, items } })) }
-      catch (e) { if (active) setRows((old) => ({ ...old, [id]: { name, items: [], error: e instanceof Error ? e.message : 'Unable to load row' } })) }
+      catch (e) { if (active) setRows((old) => ({ ...old, [id]: { name, items: old[id]?.items ?? [], error: e instanceof Error ? e.message : 'Unable to load row' } })) }
     }
     void load('resume', 'Continue Watching', getResumeItems(session))
     void load('next', 'Next Up', nextItems(session))
