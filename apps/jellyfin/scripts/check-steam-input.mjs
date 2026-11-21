@@ -53,7 +53,7 @@ console.log('PASS newest resume per series, cross-row episode/series/ID dedupe, 
 const source = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
 for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], ['win32', false, true], ['linux', false, false], ['linux', true, false]]) {
-  const switches = new Map(), handlers = new Map()
+  const switches = new Map([['disable-features', 'ExistingFeature']]), handlers = new Map()
   const appEvents = new Map(), windowEvents = new Map()
   let window, focus = 0, rendererFocus = 0, focused = true, nativeFullscreenCalls = 0, flashes = 0
   let bounds = { x: 120, y: 80, width: 1280, height: 720 }, nativeFullscreen = false
@@ -88,6 +88,9 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   await Promise.resolve()
   assert.equal(switches.has('in-process-gpu'), platform === 'win32')
   assert.equal(switches.has('disable-direct-composition'), platform === 'win32')
+  for (const flag of ['disable-renderer-backgrounding', 'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows']) assert.equal(switches.has(flag), platform === 'win32')
+  assert.equal(switches.get('disable-features').split(',').includes('CalculateNativeWinOcclusion'), platform === 'win32')
+  assert.ok(switches.get('disable-features').split(',').includes('ExistingFeature'))
   assert.equal(switches.has('enable-accelerated-video-decode'), platform === 'linux')
   assert.equal(switches.has('disable-gpu'), false)
   assert.equal(window.options.fullscreen, gameMode)
@@ -124,3 +127,4 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   assert.equal(focus, 0)
 }
 console.log('PASS main dispatch: Windows normal-z-order borderless fullscreen covers the matching display and restores bounds; native/HTML fullscreen disabled; background focus/toggle/relaunch never raise the window; foreground renderer focus only; Linux VA-API/Game Mode retained')
+console.log('PASS Windows retains in-process-gpu/disable-direct-composition; disables renderer/timer/occluded-window backgrounding and CalculateNativeWinOcclusion; preserves existing disabled features; backgroundThrottling=false; Linux unchanged')

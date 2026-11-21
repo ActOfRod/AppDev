@@ -5,6 +5,11 @@ import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
 
 for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
+if (process.platform === 'win32') {
+  const features = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
+  features.add('CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('disable-features', [...features].join(','))
+}
 
 if (process.platform === 'linux') {
   if (process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox')
