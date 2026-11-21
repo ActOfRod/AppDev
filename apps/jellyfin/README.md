@@ -1,4 +1,4 @@
-# ValveFin 0.3.0
+# ValveFin 0.3.1
 
 Controller-first media launcher and native Jellyfin client for **Windows and Linux/SteamOS**, designed for Steam Big Picture and Game Mode. Visual language follows [ElegantFin](https://github.com/lscambo13/ElegantFin): dark slate, cinematic backdrops and highly visible white focus borders.
 
@@ -18,9 +18,16 @@ Web services run in sandboxed, isolated `WebContentsView`s using desktop Chrome 
 | X | Space (play/pause on compatible players) |
 | Y | ValveFin on-screen keyboard; Done inserts text into the service's focused field |
 | Start / hold B for ~1 second | ValveFin overlay menu |
-| Keyboard F10 | Overlay menu (normal keyboard/mouse and Steam trackpad input remain available) |
+| F10 / hold Escape ~1 second | Overlay menu; holding the opening key/button does not immediately close it |
+| BrowserBack / Alt+Left | History Back, or Launcher at the service start page |
+| BrowserHome | Return directly to Launcher |
+| Trackpad / mouse | Click the small ValveFin Home pill: shown briefly on open or near the top edge; auto-hides |
 
 The controller-navigable overlay is a separate trusted view above the website: Continue, Home/Launcher, Back, Forward, Reload, Zoom ±, Toggle cursor, OSK, confirmed Sign out/clear data and Exit ValveFin. Service sites still control their own navigation and player shortcuts; account, region and subscription requirements apply. **Netflix on Linux is typically limited to approximately 720p**; do not expect Windows-level resolutions or universal service support. Widevine availability does not override service policies.
+
+Steam Input can keep the trackpads mapped as a mouse. A Gamepad template is recommended for the full controller map; keyboard/mouse mappings can use the fallback keys or the clickable Home pill. The pill occupies only a 140×42 region at the top center while visible, never takes focus merely by appearing, and hides on HTML fullscreen entry until mouse movement reveals it. It is a trusted ValveFin view, not injected into the website. Short Escape remains available to the site, including exiting its fullscreen.
+
+`node scripts/check-service-input.mjs` checks mirrored/staggered controller deduplication and unavailable Gamepad API handling. After building, `node scripts/check-service-return.mjs` is a Linux native-focus regression: it uses `/dev/uinput` and passwordless `sudo -n` to create temporary kernel gamepads, clicks the service view, operates the real Gamepad API and menu, and checks keyboard/mouse fallbacks. Only its temporary virtual input devices are made readable and they are destroyed on exit. Native Windows/physical Steam Controller behavior still requires hardware verification.
 
 The Castlabs ECS runtime prepares Widevine before loading services, with a Preparing DRM state and retryable errors. First-time Linux CDM installation can need a restart. See [ECS runtime / EVS signing](ECS.md) for the real EME/demo probe and CI secrets **`EVS_ACCOUNT_NAME` / `EVS_PASSWORD`**. Missing secrets warn and skip Windows VMP signing; services can reject unsigned builds. The afterPack preflight pairs with afterSign VMP finalization so subsequent executable editing / Authenticode signing cannot invalidate VMP.
 
@@ -58,16 +65,16 @@ The portable `ValveFin.exe` is an NSIS launcher: it extracts the app into a temp
 Download from [Releases](https://github.com/ActOfRod/AppDev/releases) when available:
 
 - **ValveFin.exe**: portable; keep it in a permanent, writable folder and run it.
-- **ValveFin-Setup-0.3.0.exe**: optional NSIS installer.
+- **ValveFin-Setup-0.3.1.exe**: optional NSIS installer.
 
 Unsigned builds can trigger SmartScreen. Verify the source/download before choosing **More info → Run anyway**. Add the portable or installed executable with **Steam → Games → Add a Non-Steam Game**, then launch from Big Picture. Preferences live in your user profile, not beside the executable.
 
 ## SteamOS / Steam Deck install
 
-1. Switch to **Desktop Mode** and download **ValveFin-0.3.0-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
+1. Switch to **Desktop Mode** and download **ValveFin-0.3.1-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
 2. Dolphin → Properties → Permissions → **Is executable**, or run:
    ```bash
-   chmod +x ~/Applications/ValveFin-0.3.0-x86_64.AppImage
+   chmod +x ~/Applications/ValveFin-0.3.1-x86_64.AppImage
    ```
 3. Run it once; sign in using the controller keyboard, a physical keyboard or Quick Connect.
 4. Steam → **Add a Non-Steam Game → Browse**, select the AppImage (show all files), and name it ValveFin. **Do not force Proton**: this is a native Linux app.
@@ -83,9 +90,9 @@ Without FUSE, set the Steam shortcut's launch options to:
 --appimage-extract-and-run
 ```
 
-Or run `./ValveFin-0.3.0-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
+Or run `./ValveFin-0.3.1-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
 
-The alternative **ValveFin-0.3.0-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
+The alternative **ValveFin-0.3.1-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
 
 Linux VA-API decode is enabled where Electron/Mesa/drivers support it; unsupported codecs fall back to software decoding or Jellyfin transcoding. Hardware decode and physical-controller behavior should be checked on the target device.
 
@@ -121,13 +128,19 @@ Build on the matching OS where possible. Windows cross-builds on Linux need Wine
 
 The [Build ValveFin workflow](../../.github/workflows/build-jellyfin-windows.yml) builds on `windows-latest` and `ubuntu-latest` for relevant PRs, main pushes and manual dispatch. Download `valvefin-windows` / `valvefin-linux` workflow artifacts for untagged builds.
 
-Maintainers can publish all four packages by pushing **`valvefin-v0.3.0`** after checking the matching package version. Tag builds validate the version and publish packages plus `SHA256SUMS.txt` only after both platforms succeed. Builds are unsigned unless optional signing credentials are configured. SHA-256 checksums detect corrupt downloads; they are not code signatures.
+Maintainers can publish all four packages by pushing **`valvefin-v0.3.1`** after checking the matching package version. Tag builds validate the version and publish packages plus `SHA256SUMS.txt` only after both platforms succeed. Builds are unsigned unless optional signing credentials are configured. SHA-256 checksums detect corrupt downloads; they are not code signatures.
 
 ## Client updates
 
 Settings → Updates checks stable `valvefin-v*` releases from ActOfRod/AppDev. Startup checks default to On and announce available updates without moving focus; they never download or install automatically. Release notes are paged for gamepad use. Downloads show progress and can be cancelled before installation. Offline and GitHub rate-limit errors are shown in Settings.
 
 Installed Windows NSIS builds download the matching Setup executable, verify SHA-256, then start the silent installer and quit. The installer restarts ValveFin. Linux AppImages download beside the current file, verify SHA-256, mark it executable and atomically replace the same path before relaunch, preserving the Steam shortcut. The AppImage and its containing directory must be writable; symlink targets are refused. Portable Windows, Linux tar/unpacked and development builds only open the release page. Releases without a matching checksums asset cannot be installed in-app. Network, filesystem and installer actions run only in the main process through validated IPC.
+
+## 0.3.1
+
+- Fixed service menus immediately dismissing when the Start/B press that opened them followed focus into the overlay. Service input stays in the service preload; the newly focused overlay waits for release before accepting gamepad actions.
+- Coalesced mirrored gamepads and added keyboard/browser-key fallbacks plus a small auto-hiding, mouse-clickable ValveFin Home pill.
+- Preserved Windows Steam overlay flags, repaint behavior and AppImage sandbox launch behavior.
 
 ## 0.3.0
 
