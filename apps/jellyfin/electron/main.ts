@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
 import { ClientUpdates } from './updates'
+import { Services, registerServices } from './services'
 
 for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
 if (process.platform === 'win32') {
@@ -31,6 +32,8 @@ process.env.VITE_PUBLIC = app.isPackaged
 let mainWindow: BrowserWindow | null = null
 let updates: ClientUpdates | undefined
 let updatesReady = Promise.resolve()
+let services: Services | undefined
+registerServices(() => services, () => mainWindow?.isFocused() ?? false)
 
 function initializeUpdates() {
   const mode = !app.isPackaged || process.arch !== 'x64' || process.env.PORTABLE_EXECUTABLE_FILE ? 'manual'
@@ -94,6 +97,7 @@ function setWindowFullscreen(enabled: boolean) {
     if (windowedMaximized) mainWindow.maximize()
   }
   borderlessFullscreen = enabled
+  services?.resize()
   mainWindow.webContents.send('window:fullscreen-changed', enabled)
 }
 type DesktopState = { fullscreen?: boolean; bounds?: { x?: number; y?: number; width: number; height: number } }
@@ -135,6 +139,8 @@ function createWindow() {
     },
   })
   if (process.platform === 'win32' && desktopState.fullscreen !== false) setWindowFullscreen(true)
+
+  services = new Services(mainWindow, VITE_DEV_SERVER_URL || pathToFileURL(path.join(process.env.DIST!, 'index.html')).href, isWindowFullscreen)
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)

@@ -1,7 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { UpdateState } from './update-types'
+import type { LauncherService, ServiceAction, ServiceState } from './service-types'
 
 contextBridge.exposeInMainWorld('jellyfinDesktop', {
+  services: {
+    state: () => ipcRenderer.invoke('services:command', 'state'),
+    open: (service: LauncherService) => ipcRenderer.invoke('services:command', 'open', service),
+    action: (action: ServiceAction) => ipcRenderer.invoke('services:command', action),
+    type: (value: string) => ipcRenderer.invoke('services:command', 'type', value),
+    subscribe: (callback: (state: ServiceState) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: ServiceState) => callback(state)
+      ipcRenderer.on('services:state', listener)
+      return () => ipcRenderer.removeListener('services:state', listener)
+    },
+  },
   updates: {
     state: () => ipcRenderer.invoke('updates:command', 'state'),
     check: () => ipcRenderer.invoke('updates:command', 'check'),

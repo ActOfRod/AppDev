@@ -135,8 +135,10 @@ async function toggleFullscreen() {
  * Keyboard arrows work as a fallback; gamepad D-pad / left stick move focus.
  * A / South activates; B / East goes back; Y / North toggles fullscreen.
  */
-export function useControllerNavigation(enabled: boolean) {
+export function useControllerNavigation(enabled: boolean, actions?: { y?: () => void; start?: () => void }) {
   const stickCooldown = useRef(0)
+  const actionsRef = useRef(actions)
+  actionsRef.current = actions
 
   useEffect(() => {
     if (!enabled) {
@@ -223,12 +225,13 @@ export function useControllerNavigation(enabled: boolean) {
       if (justPressed(1)) {
         window.dispatchEvent(new CustomEvent('jellyfin:back'))
       }
-      // Y / North — fullscreen
+      // Y / North
       if (justPressed(3)) {
-        void toggleFullscreen()
+        if (actionsRef.current?.y) actionsRef.current.y()
+        else void toggleFullscreen()
       }
       if (justPressed(2)) window.dispatchEvent(new Event('valvefin:context'))
-      if (justPressed(9)) { if (document.querySelector('[data-modal]')) window.dispatchEvent(new Event('valvefin:activity')); else { document.querySelector<HTMLElement>('.nav-rail button')?.focus(); window.scrollTo({ top: 0 }) } }
+      if (justPressed(9)) { if (actionsRef.current?.start) actionsRef.current.start(); else if (document.querySelector('[data-modal]')) window.dispatchEvent(new Event('valvefin:activity')); else { document.querySelector<HTMLElement>('.nav-rail button')?.focus(); window.scrollTo({ top: 0 }) } }
 
       // Left stick with cooldown
       if (now >= stickCooldown.current) {

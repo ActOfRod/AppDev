@@ -8,7 +8,7 @@ Each app lives in its own folder under `apps/`. Apps are meant to be launched fr
 
 ```
 apps/
-  jellyfin/     # ValveFin — Windows + Linux/SteamOS Jellyfin client (ElegantFin-inspired)
+  jellyfin/     # ValveFin — Windows + Linux/SteamOS media launcher + native Jellyfin client
 ```
 
 ## Goals
@@ -27,8 +27,14 @@ apps/
 
 Cinematic browsing, paginated libraries/collections, controller search, favorites/watched state, capability-aware playback, subtitles, skip segments, next-episode autoplay, trickplay, background music and saved profiles/Quick Connect. See the [full features and requirements](apps/jellyfin/README.md).
 
-- **Windows:** download `ValveFin-Setup-0.2.3.exe` (recommended for Steam) or portable `ValveFin.exe` from [Releases](https://github.com/ActOfRod/AppDev/releases) when available. Add the installed executable as a non-Steam game; the portable launcher extracts and runs a temporary child process that Steam may not hook. Builds are unsigned.
-- **SteamOS:** Desktop Mode → download `ValveFin-0.2.3-x86_64.AppImage` → Properties → executable (or `chmod +x`) → Add to Steam as a non-Steam game → launch in Game Mode. Use a Steam Input **Gamepad** template, not keyboard/mouse; do not force Proton. Without FUSE, add `--appimage-extract-and-run` to launch options. No writable system partition or setuid sandbox setup is needed.
+- **Windows:** download `ValveFin-Setup-0.3.0.exe` (recommended for Steam) or portable `ValveFin.exe` from [Releases](https://github.com/ActOfRod/AppDev/releases) when available. Add the installed executable as a non-Steam game; the portable launcher extracts and runs a temporary child process that Steam may not hook. Builds are unsigned unless optional signing credentials are configured.
+- **SteamOS:** Desktop Mode → download `ValveFin-0.3.0-x86_64.AppImage` → Properties → executable (or `chmod +x`) → Add to Steam as a non-Steam game → launch in Game Mode. Use a Steam Input **Gamepad** template, not keyboard/mouse; do not force Proton. Without FUSE, add `--appimage-extract-and-run` to launch options. No writable system partition or setuid sandbox setup is needed.
+
+### ValveFin 0.3.0 launcher
+
+Start with native Jellyfin, Netflix, Prime Video, Disney+, Hulu, Max, YouTube TV-web (`youtube.com/tv`) or your own HTTP(S) services. Show/hide/reorder tiles and choose Launcher or direct Jellyfin startup in Launcher settings. Each web service has its own persistent login partition. Service controls: A click/Enter, B fullscreen Escape / history Back / Launcher, D-pad arrows, left-stick cursor, right-stick/triggers scroll, X Space, Y on-screen keyboard, Start or hold B for the overlay menu (F10 on keyboard). The Steam trackpad remains normal mouse input.
+
+Castlabs ECS provides Widevine; commercial services control compatibility and resolution. Netflix on Linux is typically approximately 720p. Optional Windows EVS VMP signing uses repository secrets `EVS_ACCOUNT_NAME` and `EVS_PASSWORD`; absent secrets warn and skip signing. See the [client README](apps/jellyfin/README.md) and [ECS/EVS notes](apps/jellyfin/ECS.md) for services, the controller map, DRM probing and signing order.
 - **Controller:** D-pad/stick move; A selects; B backs out; X card actions (subtitles in player); Y fullscreen; Start navigation (play/pause in player); Select player info; LB/RB seek ±30s. See the [complete map](apps/jellyfin/README.md#controller-map).
 - **Build:** Node 22+, `cd apps/jellyfin`, `npm ci`, then `npm run dev`, `npm run pack:win` or `npm run pack:linux`. Outputs are in `apps/jellyfin/release/`; build on the matching OS, or install Wine for Windows cross-builds.
 

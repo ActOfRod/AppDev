@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
+import electronEntry from 'vite-plugin-electron'
 import path from 'node:path'
 
 export default defineConfig({
@@ -15,6 +16,11 @@ export default defineConfig({
         input: 'electron/preload.ts',
       },
       renderer: {},
+    }),
+    electronEntry({
+      entry: 'electron/service-preload.ts',
+      onstart({ reload }) { reload() },
+      vite: { build: { emptyOutDir: false, rollupOptions: { output: { format: 'cjs', entryFileNames: 'service-preload.js' } } } },
     }),
   ],
   resolve: {
