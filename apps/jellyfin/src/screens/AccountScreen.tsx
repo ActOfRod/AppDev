@@ -19,11 +19,15 @@ export function AccountScreen({ success, message }: { success: (s: JellyfinSessi
   useEffect(() => {
     if (!quick) return
     let active = true
+    let pending = false
     const poll = setInterval(async () => {
+      if (!active || pending) return
+      pending = true
       try {
         const r = await publicRequest<{ Authenticated: boolean }>(server, `/QuickConnect/Connect?secret=${encodeURIComponent(quick.Secret)}`)
-        if (active && r.Authenticated) { active = false; clearInterval(poll); success(await completeQuickConnect(server, quick.Secret)) }
-      } catch (e) { if (active) { setError(e instanceof Error ? e.message : 'Quick Connect expired'); setQuick(null) } }
+        if (active && r.Authenticated) { clearInterval(poll); const session = await completeQuickConnect(server, quick.Secret); if (active) success(session) }
+      } catch (e) { if (active) { clearInterval(poll); setError(e instanceof Error ? e.message : 'Quick Connect expired'); setQuick(null) } }
+      finally { pending = false }
     }, 2000)
     return () => { active = false; clearInterval(poll) }
   }, [quick, server, success])
