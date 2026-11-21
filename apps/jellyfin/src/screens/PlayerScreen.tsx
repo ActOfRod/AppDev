@@ -41,6 +41,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
   const openMenuRef = useRef<OpenMenu>('none')
   const osdVisibleRef = useRef(true)
   const retried = useRef(false)
+  const userPaused = useRef(false)
   const mounted = useRef(true)
   const reported = useRef<string | null>(null)
   const pendingMetadata = useRef<(() => void) | null>(null)
@@ -253,6 +254,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
   const togglePlay = () => {
     const video = videoRef.current
     if (!video) return
+    userPaused.current = !video.paused
     if (video.paused) void video.play()
     else video.pause()
     showOsd(true)
@@ -297,12 +299,12 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     }
   }
 
-  const reloadPlayback = async (options: PlaybackOptions) => {
+  const reloadPlayback = async (options: PlaybackOptions, resumeOverride?: boolean) => {
     const video = videoRef.current
     if (!video) return
     const revision = ++reloadRevision.current
     const resumeAt = video.currentTime
-    const resumePlayback = !video.paused
+    const resumePlayback = resumeOverride ?? !video.paused
     setLoading(true)
     setError(null)
     setOpenMenu('none')
@@ -341,7 +343,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     const playback = playbackRef.current
     if (playback && playback.playMethod !== 'Transcode' && !retried.current) {
       retried.current = true
-      await reloadPlayback({ forceTranscode: true })
+      await reloadPlayback({ forceTranscode: true }, !userPaused.current)
     } else setError('Playback failed. Go back and try another title or track.')
   }
 
@@ -359,6 +361,7 @@ export function PlayerScreen({ session, item, onBack, onNext, startPositionTicks
     const videoElement = videoRef.current
     mounted.current = true
     retried.current = false
+    userPaused.current = false
 
     ;(async () => {
       setLoading(true)

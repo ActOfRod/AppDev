@@ -56,6 +56,7 @@ try {
     if(url.includes('/QuickConnect/Initiate'))return Promise.resolve(Response.json({Code:'123456',Secret:'review-secret'}));
     if(url.includes('/QuickConnect/Connect?')){window.reviewPolls++;return Promise.resolve(Response.json({Authenticated:window.reviewMode!=='pending'}))}
     if(url.includes('/Users/AuthenticateWithQuickConnect'))return Promise.resolve(window.reviewMode==='failure'?new Response('Exchange failed',{status:503}):Response.json({AccessToken:'review-token',ServerId:'review-server',User:{Id:'review-user',Name:'Review'}}));
+    if(url.includes('/PlaybackInfo')&&init?.body)(window.reviewPlaybackRequests??=[]).push(JSON.parse(init.body));
     if(url.includes('/Sessions/Playing')){window.reviewReports.push({url,body:JSON.parse(init.body)});return Promise.resolve(Response.json({}))}
     return window.reviewNativeFetch(input,init)};
     window.reviewSession=${JSON.stringify(session)};window.reviewEpisode=${JSON.stringify(episode)};window.reviewMovie=${JSON.stringify(movie)};window.reviewTracks=${JSON.stringify(tracks)};
@@ -121,7 +122,34 @@ try {
   await wait('window.reviewMetadata>0')
   assert.equal(await evaluate(`document.querySelector('video').paused`), false)
   console.log('PASS quality reload preserves paused/playing state and position; completed music does not double-stop on unmount')
+  await evaluate(`localStorage.setItem('valvefin.player.settings',JSON.stringify({autoplay:true,countdown:10}));
+    window.reviewOriginalPlay=HTMLMediaElement.prototype.play;window.reviewBlockPlay=true;window.reviewFirstPlayBlocked=false;window.reviewPlayCalls=0;window.reviewPlaybackRequests=[];window.reviewReports=[];
+    HTMLMediaElement.prototype.play=function(...args){if(this.tagName==='VIDEO'){window.reviewPlayCalls++;if(window.reviewBlockPlay){window.reviewBlockPlay=false;window.reviewFirstPlayBlocked=true;return Promise.reject(new DOMException('Initial play held by test','AbortError'))}}return window.reviewOriginalPlay.apply(this,args)};
+    window.reviewNoAutoplay=new MutationObserver(()=>document.querySelectorAll('video').forEach(v=>v.autoplay=false));window.reviewNoAutoplay.observe(document.getElementById('root'),{childList:true,subtree:true});
+    window.reviewMoviePlayer=()=>window.reviewMount('PlayerScreen',{session:window.reviewSession,item:window.reviewMovie,onBack:()=>{},onNext:()=>{},startPositionTicks:0});await window.reviewMoviePlayer()`)
+  await wait('window.reviewFirstPlayBlocked')
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true)
+  assert.equal(await evaluate(`window.reviewReports.filter(r=>r.url.endsWith('/Playing')).length`), 0)
+  await evaluate(`document.querySelector('video').dispatchEvent(new Event('error'))`)
+  await wait(`window.reviewPlaybackRequests.some(r=>r.EnableDirectPlay===false)&&!document.querySelector('video').paused&&document.querySelector('video').currentTime>0`)
+  await wait(`window.reviewReports.some(r=>r.url.endsWith('/Playing'))`)
+  const retryRequests = await evaluate('window.reviewPlaybackRequests.length')
+  await evaluate(`document.querySelector('video').dispatchEvent(new Event('error'))`)
+  await wait(`document.body.textContent.includes('Playback failed. Go back')`)
+  assert.equal(await evaluate('window.reviewPlaybackRequests.length'), retryRequests)
+  console.log('PASS Direct Play error before first playing event retries forced transcode, actually plays and reports start; second error never retries')
+  await evaluate(`window.reviewPlaybackRequests=[];window.reviewPlayCalls=0;await window.reviewMoviePlayer()`)
+  await wait(`document.querySelector('video')?.readyState>=2&&!document.querySelector('video').paused&&document.querySelector('video').currentTime>0`)
+  await evaluate(`document.querySelector('button[aria-label="Pause"]').click();window.reviewRetryMetadata=0;document.querySelector('video').addEventListener('loadedmetadata',()=>window.reviewRetryMetadata++)`)
+  await wait(`document.querySelector('video').paused`)
+  const pausedPlayCalls = await evaluate('window.reviewPlayCalls')
+  await evaluate(`document.querySelector('video').dispatchEvent(new Event('error'))`)
+  await wait(`window.reviewPlaybackRequests.some(r=>r.EnableDirectPlay===false)&&window.reviewRetryMetadata>0`)
+  assert.equal(await evaluate(`document.querySelector('video').paused`), true)
+  assert.equal(await evaluate('window.reviewPlayCalls'), pausedPlayCalls)
+  console.log('PASS explicit user Pause remains paused through forced-transcode error recovery')
 } finally {
+  await evaluate(`if(window.reviewOriginalPlay)HTMLMediaElement.prototype.play=window.reviewOriginalPlay;window.reviewNoAutoplay?.disconnect()`)
   if (savedStorage) await evaluate(`localStorage.clear();for(const[k,v]of Object.entries(${savedStorage}))localStorage.setItem(k,v)`)
   await send('Page.navigate', { url: 'http://localhost:5173' })
   socket.close()
