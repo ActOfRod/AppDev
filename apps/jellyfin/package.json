@@ -1,7 +1,7 @@
 {
   "name": "valvefin",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "AppDev",
   "description": "ValveFin — controller-friendly Jellyfin client for Steam Big Picture",
   "desktopName": "ValveFin.desktop",
