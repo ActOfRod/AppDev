@@ -147,7 +147,7 @@ export function useControllerNavigation(enabled: boolean, actions?: { y?: () => 
     }
 
     // Avoid phantom presses from buttons still held after leaving the player.
-    const pads = () => actionsRef.current?.releaseFirst ? coalesceServicePads(navigator.getGamepads?.() ?? []) : navigator.getGamepads?.() ?? []
+    const pads = () => coalesceServicePads(navigator.getGamepads?.() ?? [])
     const readPads = createPadReader(pads())
     let armed = !actionsRef.current?.releaseFirst
     // Recover focus if the previous screen left a detached activeElement.

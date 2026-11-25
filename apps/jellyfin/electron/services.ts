@@ -80,7 +80,13 @@ export class Services {
       this.view = view; this.window.contentView.addChildView(view); this.resize()
       const wc = view.webContents
       wc.setUserAgent(`Mozilla/5.0 (${process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64'}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`)
-      wc.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) void wc.loadURL(url).catch((e) => this.fail(e, generation)); return { action: 'deny' } })
+      wc.setWindowOpenHandler(({ url, referrer, postBody }) => {
+        if (/^https?:\/\//i.test(url)) {
+          const extraHeaders = postBody ? `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ''}\r\n` : undefined
+          void wc.loadURL(url, { httpReferrer: referrer, postData: postBody?.data, extraHeaders }).catch((e) => this.fail(e, generation))
+        }
+        return { action: 'deny' }
+      })
       wc.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault() })
       wc.on('will-redirect', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault() })
       wc.on('did-navigate', () => this.publish()); wc.on('did-navigate-in-page', () => this.publish())

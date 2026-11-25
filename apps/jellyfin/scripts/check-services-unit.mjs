@@ -11,7 +11,7 @@ class Contents extends EventEmitter {
   constructor() { super(); this.mainFrame = { url: 'https://valvefin.test/index.html' }; this.events = []; this.url = ''; this.destroyed = false; this.history = []; this.navigationHistory = { canGoBack: () => this.history.length > 1, canGoForward: () => false, goBack: () => { this.url = this.history[0]; this.history.pop() }, goForward() {}, clear: () => { this.history = [this.url] } } }
   send() {} focus() {} setUserAgent(value) { this.ua = value } setWindowOpenHandler(handler) { this.popup = handler }
   async executeJavaScript() { return false }
-  async loadURL(url) { if (url.includes('offline')) throw Error('Offline fixture'); this.url = url; this.history.push(url); this.mainFrame.url = url }
+  async loadURL(url, options) { if (url.includes('offline')) throw Error('Offline fixture'); this.url = url; this.history.push(url); this.mainFrame.url = url; this.loadOptions = options }
   getURL() { return this.url } isDestroyed() { return this.destroyed } close() { this.destroyed = true }
   sendInputEvent(event) { this.events.push(event) } insertText(value) { this.text = value } reload() {} setZoomFactor(value) { this.zoom = value }
 }
@@ -41,6 +41,17 @@ assert.equal(readyCount, 1); assert.equal(manager.snapshot().status, 'active'); 
 for (const permission of ['media', 'geolocation', 'camera', 'microphone', 'notifications']) { let granted; store.permission(wc, permission, (v) => granted = v); assert.equal(granted, false) }
 assert.equal(store.check(wc, 'mediaKeySystem'), true); assert.equal(store.device(), false)
 assert.ok(wc.ua.includes('Chrome/')); assert.ok(!wc.ua.includes('Electron'))
+const referrer = { url: config.url, policy: 'strict-origin-when-cross-origin' }
+for (const postBody of [undefined, { contentType: 'application/x-www-form-urlencoded', data: [{ type: 'rawData', bytes: Buffer.from('flow=fixture') }] }, { contentType: 'multipart/form-data', boundary: 'fixture-boundary', data: [{ type: 'rawData', bytes: Buffer.from('--fixture-boundary--') }] }]) {
+  assert.equal(wc.popup({ url: 'https://www.amazon.com/ap/signin', referrer, postBody }).action, 'deny')
+  assert.equal(wc.url, 'https://www.amazon.com/ap/signin'); assert.equal(wc.loadOptions.httpReferrer, referrer)
+  assert.equal(wc.loadOptions.postData, postBody?.data)
+  assert.equal(wc.loadOptions.extraHeaders, postBody ? `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ''}\r\n` : undefined)
+  assert.equal(wc.session, store)
+}
+for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'about:blank']) { wc.popup({ url, referrer }); assert.equal(wc.url, 'https://www.amazon.com/ap/signin') }
+wc.history = [config.url]; wc.url = config.url
+console.log('PASS HTTP(S) popups stay in the service session with referrer and URL-encoded/multipart POST data; GET/empty bodies and blocked schemes remain safe')
 const key = (contents, name, type = 'keyDown', extra = {}) => { let prevented = false; contents.emit('before-input-event', { preventDefault() { prevented = true } }, { key: name, type, ...extra }); return prevented }
 const home = views.find((v) => v.webContents.url.includes('service-home'))
 assert.equal(home.bounds.width, 140); assert.equal(home.bounds.height, 42); assert.equal(home.visible, true)
@@ -92,5 +103,11 @@ key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt:
 assert.equal(manager.snapshot().status, 'idle', 'Alt released before Left must not suppress the next Alt+Left Back')
 console.log('PASS Alt+Left history Back, Alt-up before Left-up, then Alt+Left returns to Launcher without a stuck held key')
 await manager.command('home-hover', false); manager.close()
+await manager.open(config)
+views.findLast((v) => v.options.webPreferences.session).webContents.popup({ url: 'https://offline.test/', referrer })
+await Promise.resolve(); await Promise.resolve()
+assert.equal(manager.snapshot().status, 'error'); assert.equal(children.length, 0)
+manager.close()
+console.log('PASS popup navigation failures publish an error and clean up the service views')
 console.log('PASS service return fallbacks: repeat-safe F10, short/held Escape and focus transfer, BrowserBack/Alt+Left/BrowserHome, foreground gating, Home pill bounds/hover validation/fullscreen reveal and empty cleanup')
 console.log('PASS services: lifecycle/partition reuse, DRM readiness/failure/retry, empty close, invalid URLs/actions/text, trusted IPC and focus gating, camera/mic/location denial, desktop UA, input/cursor/scroll, HTML fullscreen Escape, overlay, OSK, sleep cleanup and offline errors')
