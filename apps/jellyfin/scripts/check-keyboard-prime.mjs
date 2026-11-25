@@ -13,7 +13,7 @@ let popupRequest
 const fixture = createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html')
   if (req.url === '/popup-form') { res.setHeader('Set-Cookie', 'primefixture=kept; SameSite=Lax; Path=/'); res.end('<!doctype html><form method="POST" target="_blank" action="/popup-login"><input name="flow" value="prime-fixture"><button id="submit">Sign in</button></form>'); return }
-  if (req.url === '/popup-login') { let body = ''; req.on('data', (chunk) => body += chunk); req.on('end', () => { popupRequest = { method: req.method, body, type: req.headers['content-type'], referrer: req.headers.referer, cookie: req.headers.cookie }; res.end('<!doctype html><h1>Popup login</h1>') }); return }
+  if (req.url === '/popup-login') { let body = ''; req.on('data', (chunk) => body += chunk); req.on('end', () => { popupRequest = { method: req.method, body, type: req.headers['content-type'], referrer: req.headers.referer, origin: req.headers.origin, cookie: req.headers.cookie }; res.end('<!doctype html><h1>Popup login</h1>') }); return }
   res.end('<!doctype html><input id="text"><textarea id="area"></textarea><div id="editable" contenteditable="true">edit:</div><script>window.inputEvents=[];for(const t of ["keydown","keyup","beforeinput","input"])addEventListener(t,e=>inputEvents.push({type:e.type,key:e.key,data:e.data,trusted:e.isTrusted}))</script>')
 })
 await new Promise((r) => fixture.listen(0, '127.0.0.1', r))
@@ -115,6 +115,7 @@ try {
   console.log('POPUP LOGIN REQUEST', popupRequest)
   if (!diagnose) {
     assert.equal(popupRequest.method, 'POST'); assert.equal(popupRequest.body, 'flow=prime-fixture')
+    assert.equal(popupRequest.origin, new URL(origin).origin, 'Popup POST must preserve the opener origin')
     assert.match(popupRequest.type, /^application\/x-www-form-urlencoded/); assert.equal(popupRequest.referrer, origin + 'popup-form'); assert.match(popupRequest.cookie, /primefixture=kept/)
     assert.equal(await main.eval(`originalService.session===originalSession && ${req}.webContents.getAllWebContents().filter(w=>w.getURL().startsWith(${JSON.stringify(origin)})).length===1`), true)
   }
