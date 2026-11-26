@@ -14,6 +14,7 @@ export function validateService(value: unknown): LauncherService {
 
 export class Services {
   private view?: WebContentsView
+  private clearPopupHeaders?: () => void
   private overlay?: WebContentsView
   private home?: WebContentsView
   private homeReady = false
@@ -50,6 +51,7 @@ export class Services {
     clearTimeout(this.homeTimer); clearTimeout(this.escapeTimer)
     this.escapeHeld = false; this.returnKeys.clear(); this.homeReady = false
     this.stopBlocker()
+    this.clearPopupHeaders?.(); this.clearPopupHeaders = undefined
     for (const view of [this.overlay, this.home, this.view]) if (view) { if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close() }
     this.overlay = undefined; this.home = undefined; this.view = undefined; this.htmlFullscreen = false; this.virtual = false; this.physical = false
     this.state = { status: 'idle', cursor: true, zoom: 1, canBack: false, canForward: false }
@@ -79,8 +81,42 @@ export class Services {
       const view = new WebContentsView({ webPreferences: { session: store, preload: path.join(__dirname, 'service-preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, autoplayPolicy: 'no-user-gesture-required', disableHtmlFullscreenWindowResize: true, ...(process.platform === 'win32' ? { backgroundThrottling: false } : {}) } })
       this.view = view; this.window.contentView.addChildView(view); this.resize()
       const wc = view.webContents
+      const popupOrigins = new Map<string, { origin: string }>()
+      store.webRequest.onBeforeSendHeaders((details, callback) => {
+        const replay = popupOrigins.get(details.url)
+        if (replay && details.webContentsId === wc.id && details.resourceType === 'mainFrame' && details.method === 'POST') {
+          popupOrigins.delete(details.url)
+          for (const key of Object.keys(details.requestHeaders)) if (key.toLowerCase() === 'origin') delete details.requestHeaders[key]
+          details.requestHeaders.Origin = replay.origin
+        }
+        callback({ requestHeaders: details.requestHeaders })
+      })
+      this.clearPopupHeaders = () => { popupOrigins.clear(); store.webRequest.onBeforeSendHeaders(null) }
       wc.setUserAgent(`Mozilla/5.0 (${process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64'}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`)
-      wc.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) void wc.loadURL(url).catch((e) => this.fail(e, generation)); return { action: 'deny' } })
+      wc.setWindowOpenHandler(({ url, referrer, postBody }) => {
+        if (/^https?:\/\//i.test(url)) {
+          const target = new URL(url); target.hash = ''
+          let origin = 'null'
+          if (postBody) {
+            try {
+              const opener = new URL(referrer.url)
+              const origins = new Set(wc.mainFrame.framesInSubtree.filter((frame) => {
+                const address = new URL(frame.url); address.hash = ''
+                return address.href === opener.href || (opener.href === `${opener.origin}/` && address.origin === opener.origin)
+              }).map((frame) => frame.origin))
+              const downgrade = opener.protocol === 'https:' && target.protocol === 'http:'
+              const privateOrigin = referrer.policy === 'no-referrer' || (referrer.policy === 'same-origin' && opener.origin !== target.origin) || (downgrade && !['unsafe-url', 'origin', 'origin-when-cross-origin'].includes(referrer.policy))
+              const candidate = origins.size === 1 ? [...origins][0] : 'null'
+              if (!privateOrigin && /^https?:\/\//i.test(candidate)) origin = candidate
+            } catch { /* opaque opener */ }
+          }
+          const replay = { origin }
+          if (postBody) popupOrigins.set(target.href, replay)
+          const extraHeaders = postBody ? `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ''}\r\n` : undefined
+          void wc.loadURL(url, { httpReferrer: referrer, postData: postBody?.data, extraHeaders }).catch((e) => this.fail(e, generation)).finally(() => { if (popupOrigins.get(target.href) === replay) popupOrigins.delete(target.href) })
+        }
+        return { action: 'deny' }
+      })
       wc.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault() })
       wc.on('will-redirect', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault() })
       wc.on('did-navigate', () => this.publish()); wc.on('did-navigate-in-page', () => this.publish())

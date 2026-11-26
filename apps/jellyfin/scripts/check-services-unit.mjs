@@ -6,12 +6,12 @@ import ts from 'typescript'
 import path from 'node:path'
 
 const stores = new Map(), handlers = new Map(), views = [], stopped = []
-let drmError = false, focused = true, quit = false, readyCount = 0
+let drmError = false, focused = true, quit = false, readyCount = 0, contentsId = 0
 class Contents extends EventEmitter {
-  constructor() { super(); this.mainFrame = { url: 'https://valvefin.test/index.html' }; this.events = []; this.url = ''; this.destroyed = false; this.history = []; this.navigationHistory = { canGoBack: () => this.history.length > 1, canGoForward: () => false, goBack: () => { this.url = this.history[0]; this.history.pop() }, goForward() {}, clear: () => { this.history = [this.url] } } }
+  constructor() { super(); this.id = ++contentsId; this.mainFrame = { url: 'https://valvefin.test/index.html' }; this.events = []; this.url = ''; this.destroyed = false; this.history = []; this.navigationHistory = { canGoBack: () => this.history.length > 1, canGoForward: () => false, goBack: () => { this.url = this.history[0]; this.history.pop() }, goForward() {}, clear: () => { this.history = [this.url] } } }
   send() {} focus() {} setUserAgent(value) { this.ua = value } setWindowOpenHandler(handler) { this.popup = handler }
   async executeJavaScript() { return false }
-  async loadURL(url) { if (url.includes('offline')) throw Error('Offline fixture'); this.url = url; this.history.push(url); this.mainFrame.url = url }
+  async loadURL(url, options) { if (url.includes('offline')) throw Error('Offline fixture'); this.url = url; this.history.push(url); this.mainFrame.url = url; this.loadOptions = options }
   getURL() { return this.url } isDestroyed() { return this.destroyed } close() { this.destroyed = true }
   sendInputEvent(event) { this.events.push(event) } insertText(value) { this.text = value } reload() {} setZoomFactor(value) { this.zoom = value }
 }
@@ -22,7 +22,7 @@ const electron = {
   app: { quit: () => { quit = true } }, components: { whenReady: async () => { readyCount++; if (drmError) throw Error('DRM unavailable fixture') } },
   powerSaveBlocker: { start: () => 17, stop: (id) => stopped.push(id) }, WebContentsView: View,
   ipcMain: { handle: (name, cb) => handlers.set(name, cb), on: (name, cb) => handlers.set(name, cb) },
-  session: { fromPartition: (id) => { if (!stores.has(id)) stores.set(id, { setPermissionRequestHandler(cb) { this.permission = cb }, setPermissionCheckHandler(cb) { this.check = cb }, setDevicePermissionHandler(cb) { this.device = cb }, async clearStorageData() { this.cleared = true }, async clearCache() {}, async clearAuthCache() {} }); return stores.get(id) } },
+  session: { fromPartition: (id) => { if (!stores.has(id)) stores.set(id, { webRequest: { onBeforeSendHeaders(cb) { this.listener = cb } }, setPermissionRequestHandler(cb) { this.permission = cb }, setPermissionCheckHandler(cb) { this.check = cb }, setDevicePermissionHandler(cb) { this.device = cb }, async clearStorageData() { this.cleared = true }, async clearCache() {}, async clearAuthCache() {} }); return stores.get(id) } },
 }
 const source = ts.transpileModule(await readFile(new URL('../electron/services.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
 const module = { exports: {} }
@@ -41,6 +41,47 @@ assert.equal(readyCount, 1); assert.equal(manager.snapshot().status, 'active'); 
 for (const permission of ['media', 'geolocation', 'camera', 'microphone', 'notifications']) { let granted; store.permission(wc, permission, (v) => granted = v); assert.equal(granted, false) }
 assert.equal(store.check(wc, 'mediaKeySystem'), true); assert.equal(store.device(), false)
 assert.ok(wc.ua.includes('Chrome/')); assert.ok(!wc.ua.includes('Electron'))
+const referrer = { url: config.url, policy: 'strict-origin-when-cross-origin' }
+wc.mainFrame.framesInSubtree = [wc.mainFrame]
+const popupHeaders = (extra = {}) => {
+  let result
+  store.webRequest.listener({ url: 'https://www.amazon.com/ap/signin', webContentsId: wc.id, resourceType: 'mainFrame', method: 'POST', requestHeaders: { origin: 'null', Cookie: 'fixture=kept' }, ...extra }, (response) => result = response.requestHeaders)
+  return result
+}
+for (const postBody of [undefined, { contentType: 'application/x-www-form-urlencoded', data: [{ type: 'rawData', bytes: Buffer.from('flow=fixture') }] }, { contentType: 'multipart/form-data', boundary: 'fixture-boundary', data: [{ type: 'rawData', bytes: Buffer.from('--fixture-boundary--') }] }]) {
+  wc.mainFrame.url = config.url; wc.mainFrame.origin = 'https://local.test'
+  assert.equal(wc.popup({ url: 'https://www.amazon.com/ap/signin', referrer, postBody }).action, 'deny')
+  assert.equal(wc.url, 'https://www.amazon.com/ap/signin'); assert.equal(wc.loadOptions.httpReferrer, referrer)
+  assert.equal(wc.loadOptions.postData, postBody?.data)
+  assert.equal(wc.loadOptions.extraHeaders, postBody ? `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ''}\r\n` : undefined)
+  assert.equal(wc.session, store)
+  if (postBody) {
+    for (const extra of [{ webContentsId: wc.id + 1 }, { resourceType: 'xhr' }, { method: 'GET' }, { url: 'https://other.test/' }]) assert.equal(popupHeaders(extra).origin, 'null')
+    const headers = popupHeaders(); assert.equal(headers.Origin, 'https://local.test'); assert.equal(headers.origin, undefined); assert.equal(headers.Cookie, 'fixture=kept')
+    assert.equal(popupHeaders().origin, 'null', 'Only the first matching replay request is changed')
+  } else assert.equal(popupHeaders({ method: 'GET', requestHeaders: {} }).Origin, undefined)
+}
+for (const [url, expected] of [['https://frame.test/path?token=fixture', 'https://frame.test'], ['https://frame.test/', 'https://frame.test'], ['', 'null'], ['about:blank', 'null'], ['invalid', 'null']]) {
+  wc.mainFrame.framesInSubtree = [{ url: 'https://frame.test/path?token=fixture', origin: 'https://frame.test' }]
+  wc.popup({ url: 'https://www.amazon.com/ap/signin', referrer: { url, policy: 'strict-origin-when-cross-origin' }, postBody: { contentType: 'application/x-www-form-urlencoded', data: [] } })
+  assert.equal(popupHeaders().Origin, expected)
+}
+for (const [frames, policy, destination] of [
+  [[{ url: config.url, origin: 'null' }], 'strict-origin-when-cross-origin', 'https://www.amazon.com/ap/signin'],
+  [[{ url: config.url, origin: 'https://local.test' }, { url: config.url, origin: 'null' }], 'strict-origin-when-cross-origin', 'https://www.amazon.com/ap/signin'],
+  [[{ url: config.url, origin: 'https://local.test' }], 'no-referrer', 'https://www.amazon.com/ap/signin'],
+  [[{ url: config.url, origin: 'https://local.test' }], 'same-origin', 'https://www.amazon.com/ap/signin'],
+  [[{ url: config.url, origin: 'https://local.test' }], 'strict-origin', 'http://www.amazon.com/ap/signin'],
+]) {
+  wc.mainFrame.framesInSubtree = frames
+  wc.popup({ url: destination, referrer: { url: config.url, policy }, postBody: { contentType: 'application/x-www-form-urlencoded', data: [] } })
+  assert.equal(popupHeaders({ url: destination }).Origin, 'null')
+}
+console.log('PASS popup POST Origin uses the live opener frame origin, never the destination or parent; opaque/ambiguous/missing origins and private referrer policies stay null; GET is unchanged')
+const beforeBlockedPopup = wc.url
+for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'about:blank']) { wc.popup({ url, referrer }); assert.equal(wc.url, beforeBlockedPopup) }
+wc.history = [config.url]; wc.url = config.url
+console.log('PASS HTTP(S) popups stay in the service session with referrer and URL-encoded/multipart POST data; GET/empty bodies and blocked schemes remain safe')
 const key = (contents, name, type = 'keyDown', extra = {}) => { let prevented = false; contents.emit('before-input-event', { preventDefault() { prevented = true } }, { key: name, type, ...extra }); return prevented }
 const home = views.find((v) => v.webContents.url.includes('service-home'))
 assert.equal(home.bounds.width, 140); assert.equal(home.bounds.height, 42); assert.equal(home.visible, true)
@@ -68,6 +109,7 @@ wc.emit('enter-html-full-screen'); await manager.command('back'); assert.ok(wc.e
 await manager.command('menu'); assert.equal(manager.snapshot().overlay, 'menu'); assert.equal(children.length, 3)
 await manager.command('type', 'typed'); assert.equal(wc.text, 'typed'); assert.equal(manager.snapshot().overlay, undefined)
 wc.emit('media-started-playing'); await manager.command('home'); assert.equal(wc.destroyed, true); assert.ok(stopped.includes(17)); assert.equal(children.length, 0)
+assert.equal(store.webRequest.listener, null, 'Closing a service removes the replay header listener')
 await manager.open(config); assert.equal(stores.size, 1); await manager.command('sign-out'); assert.equal(store.cleared, true)
 await assert.rejects(manager.command('not-a-command'), /Invalid/)
 await assert.rejects(manager.command('type', 42), /Invalid/)
@@ -92,5 +134,11 @@ key(historyContents, 'Alt'); key(historyContents, 'ArrowLeft', 'keyDown', { alt:
 assert.equal(manager.snapshot().status, 'idle', 'Alt released before Left must not suppress the next Alt+Left Back')
 console.log('PASS Alt+Left history Back, Alt-up before Left-up, then Alt+Left returns to Launcher without a stuck held key')
 await manager.command('home-hover', false); manager.close()
+await manager.open(config)
+views.findLast((v) => v.options.webPreferences.session).webContents.popup({ url: 'https://offline.test/', referrer })
+await Promise.resolve(); await Promise.resolve()
+assert.equal(manager.snapshot().status, 'error'); assert.equal(children.length, 0)
+manager.close()
+console.log('PASS popup navigation failures publish an error and clean up the service views')
 console.log('PASS service return fallbacks: repeat-safe F10, short/held Escape and focus transfer, BrowserBack/Alt+Left/BrowserHome, foreground gating, Home pill bounds/hover validation/fullscreen reveal and empty cleanup')
 console.log('PASS services: lifecycle/partition reuse, DRM readiness/failure/retry, empty close, invalid URLs/actions/text, trusted IPC and focus gating, camera/mic/location denial, desktop UA, input/cursor/scroll, HTML fullscreen Escape, overlay, OSK, sleep cleanup and offline errors')
