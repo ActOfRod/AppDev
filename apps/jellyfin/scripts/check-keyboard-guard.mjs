@@ -21,6 +21,14 @@ for (const type of ['keydown', 'keypress', 'beforeinput']) {
   guard.reset(); assert.equal(drop(type, 0), false); assert.equal(drop(type, 10), true, type)
   drop('keyup', 20); assert.equal(drop(type, 45), false, type + ' after release')
 }
+for (const [key, code] of [['Escape', 'Escape'], ['F10', 'F10'], ['ArrowLeft', 'ArrowLeft'], ['BrowserBack', 'BrowserBack'], ['BrowserHome', 'BrowserHome']]) {
+  guard.reset(); const patch = { key, code }
+  assert.equal(drop('keydown', 0, patch), false)
+  assert.equal(drop('keydown', 10, patch), true, key + ' duplicate within 30 ms')
+  assert.equal(drop('keydown', 200, patch), false, key + ' new tap after consumed keyup')
+}
+console.log('PASS return-key guard: Escape/F10/Alt+Left/BrowserBack/Home accept new taps after 200 ms even without DOM keyup; duplicates within 30 ms still suppressed')
+guard.reset(); drop('keydown', 0); drop('beforeinput', 100, { inputType: 'insertFromComposition' }); assert.equal(drop('keydown', 120), false); assert.equal(drop('keypress', 121), true, 'New keydown must not erase a recent composition commit')
 guard.reset(); assert.equal(drop('beforeinput', 0, { inputType: 'insertCompositionText', data: '日' }), false); assert.equal(drop('beforeinput', 10, { inputType: 'insertFromComposition', data: '日' }), true)
 for (const type of ['compositionend', 'beforeinput']) {
   guard.reset(); drop(type, 0, { inputType: 'insertFromComposition' }); assert.equal(drop('keypress', 10), true, 'composition commit + keypress')

@@ -1,7 +1,7 @@
 export type KeyRecord = { type: string; key: string | null; code: string | null; data: string | null; inputType: string | null; isTrusted: boolean; repeat: boolean; timestamp: number }
 
 export function createKeyboardGuard() {
-  const down = new Set<string>()
+  const down = new Map<string, number>()
   const previous = new Map<string, { data: string; time: number; target: unknown; code: string }>()
   let code = '', repeating = false, composition: { data: string; time: number; target: unknown; code: string } | undefined
   const reset = () => { down.clear(); previous.clear(); code = ''; repeating = false; composition = undefined }
@@ -21,8 +21,9 @@ export function createKeyboardGuard() {
       if (event.type === 'keydown') {
         code = event.code || event.key || ''; repeating = event.repeat
         if (!code) return false
-        if (down.has(code) && !event.repeat) return true
-        down.add(code)
+        const last = down.get(code)
+        if (last !== undefined && !event.repeat && event.timestamp >= last && event.timestamp - last <= 30) return true
+        down.set(code, event.timestamp)
         return false
       }
       if (event.type === 'compositionend' && event.data) composition = { data: event.data, time: event.timestamp, target, code }

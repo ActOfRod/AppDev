@@ -56,6 +56,17 @@ try {
   await main.eval(`globalThis.svc=${req}.webContents.getAllWebContents().find(w=>w.getURL()===${JSON.stringify(url)});globalThis.injections=[];for(const method of ['sendInputEvent','insertText']){const original=svc[method].bind(svc);svc[method]=(...args)=>{injections.push({method,args});return original(...args)}};true`)
   await pause(500)
   for (const selector of ['#field', '#area', '#editable']) { await reset(selector); await text('service-focused ' + selector, 'abZ19', selector) }
+  if (!diagnose) {
+    for (const enabled of [false, true]) {
+      await root.eval(`window.jellyfinDesktop.keyboard.configure({guard:${enabled}})`); await reset()
+      execFileSync('xdotool', ['key', '--clearmodifiers', 'Escape']); await pause(200)
+      execFileSync('xdotool', ['key', '--clearmodifiers', 'Escape']); await pause()
+      const escaped = await service.eval(`events.filter(e=>e.key==='Escape').map(e=>e.type)`)
+      console.log('NATIVE ESCAPE TAPS', JSON.stringify({ guard: enabled, events: escaped }))
+      assert.equal(escaped.filter(type=>type==='keydown').length, 2, 'Two separate Escape taps 200 ms apart must both reach the service page')
+    }
+    console.log('PASS two native Escape taps 200 ms apart reach the page with guard on/off despite shortcut-consumed keyup')
+  }
   await reset(); await main.eval(`${win}.webContents.focus();true`); await pause(); await text('root-focused')
   await reset(); await main.eval(`${req}.webContents.getAllWebContents().find(w=>w.getURL().includes('service-home')).focus();true`); await pause(); await text('Home-pill focused')
   await reset(); await root.eval(`${api}.homeHover(false)`); await pause(1000); await text('after Home-pill auto-hide')
