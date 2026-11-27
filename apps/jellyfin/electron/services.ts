@@ -37,6 +37,7 @@ export class Services {
     window.webContents.on('focus', () => this.restoreFocus())
   }
   snapshot() { return { ...this.state } }
+  keyboardView(contents: Electron.WebContents | null) { return contents === this.view?.webContents ? 'service' : contents === this.home?.webContents ? 'home' : contents === this.overlay?.webContents ? 'overlay' : 'none' }
   private restoreFocus() { setTimeout(() => this.focusActiveView(), 0) }
   private focusActiveView() {
     if (this.window.isDestroyed() || this.state.status !== 'active' || !this.window.isFocused()) return

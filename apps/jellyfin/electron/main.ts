@@ -1,12 +1,13 @@
-import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell, webContents } from 'electron'
 import path from 'node:path'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import dgram from 'node:dgram'
 import { steamOverlaySwitches } from './steam-overlay'
 import { ClientUpdates } from './updates'
 import { Services, registerServices } from './services'
+import { KeyboardLog } from './keyboard'
 
 for (const flag of steamOverlaySwitches(process.platform)) app.commandLine.appendSwitch(flag)
 if (process.platform === 'win32') {
@@ -105,6 +106,26 @@ let desktopState: DesktopState = {}
 const stateFile = path.join(app.getPath('userData'), 'desktop-state.json')
 try { desktopState = JSON.parse(readFileSync(stateFile, 'utf8')) } catch { /* first launch */ }
 function saveDesktopState() { try { writeFileSync(stateFile, JSON.stringify(desktopState)) } catch { /* read-only profile */ } }
+const keyboard = new KeyboardLog(app.getPath('userData'), process.env, [...process.argv.filter(arg => arg.startsWith('--')).map(arg => arg.split('=')[0]), ...steamOverlaySwitches(process.platform).map(flag => '--' + flag), ...['enable-features', 'disable-features'].map(flag => '--' + flag + '=' + app.commandLine.getSwitchValue(flag))], app.commandLine.getSwitchValue('ozone-platform'))
+const keyboardView = (contents: Electron.WebContents | null) => contents === mainWindow?.webContents ? 'root' : services?.keyboardView(contents) ?? 'none'
+ipcMain.on('keyboard:config', (event) => { event.returnValue = keyboardView(event.sender) !== 'none' ? keyboard.snapshot() : null })
+ipcMain.on('keyboard:event', (event, value: unknown) => { if (event.senderFrame === event.sender.mainFrame) keyboard.event(keyboardView(event.sender), keyboardView(webContents.getFocusedWebContents()), value) })
+ipcMain.handle('keyboard:command', async (event, command: unknown, value: unknown) => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw Error('Unauthorized keyboard settings')
+  const source = event.senderFrame?.url
+  let trusted = false
+  try { trusted = Boolean(source && (VITE_DEV_SERVER_URL ? new URL(source).origin === new URL(VITE_DEV_SERVER_URL).origin : source.split(/[?#]/)[0] === pathToFileURL(path.join(process.env.DIST!, 'index.html')).href)) } catch { /* invalid origin */ }
+  if (!trusted) throw Error('Unauthorized keyboard origin')
+  if (command === 'state') return keyboard.snapshot()
+  if (!mainWindow?.isFocused()) throw Error('Activate ValveFin before changing keyboard settings')
+  if (command === 'configure') {
+    const state = keyboard.configure(value)
+    for (const contents of webContents.getAllWebContents()) if (keyboardView(contents) !== 'none') contents.send('keyboard:settings', state)
+    return state
+  }
+  if (command === 'open') { const directory = keyboard.directory; mkdirSync(directory, { recursive: true }); const error = await shell.openPath(directory); if (error) throw Error('Unable to open log folder'); return }
+  throw Error('Invalid keyboard command')
+})
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
 app.on('second-instance', () => { if (mainWindow?.isFocused()) mainWindow.webContents.focus(); else mainWindow?.flashFrame(true) })

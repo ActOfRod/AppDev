@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
 interface JellyfinDesktopApi {
+  keyboard?: {
+    state: () => Promise<import('../electron/keyboard').KeyboardSettings>
+    configure: (value: Partial<Pick<import('../electron/keyboard').KeyboardSettings, 'guard' | 'diagnostics'>>) => Promise<import('../electron/keyboard').KeyboardSettings>
+    openFolder: () => Promise<void>
+  }
   services?: import('../electron/service-types').ServicesApi
   updates: import('../electron/update-types').UpdatesApi
   platform: NodeJS.Platform

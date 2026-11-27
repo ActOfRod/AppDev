@@ -83,11 +83,12 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
       loadFile() {}
     },
     screen: { getDisplayMatching: () => ({ bounds: displayBounds }) },
-    ipcMain: { handle: (name, callback) => handlers.set(name, callback) }, powerSaveBlocker: {}, shell: {},
+    ipcMain: { handle: (name, callback) => handlers.set(name, callback), on: (name, callback) => handlers.set(name, callback) }, powerSaveBlocker: {}, shell: {},
   }
   vm.runInNewContext(compiled, { exports: {}, __dirname: '/unused', setTimeout: () => ({ unref() {} }), process: { platform, execPath: '/ValveFin.exe', argv: ['ValveFin', '--user-data-dir=profile'], env: gameMode ? { SteamGamepadUI: '1' } : {} }, require: (name) => {
     if (name === 'electron') return electron
     if (name === './steam-overlay') return { steamOverlaySwitches }
+    if (name === './keyboard') return { KeyboardLog: class { snapshot() { return { guard: true, diagnostics: false } } } }
     if (name === './services') return { Services: class { resize() {} }, registerServices() {} }
     if (name === './updates') return { ClientUpdates: class { constructor(options) { updateOptions = options } async initialize() {} snapshot() { return { automatic: false } } } }
     if (name === 'node:child_process') return { execFile: (file, args, options, callback) => { assert.equal(file, 'tasklist.exe'); assert.deepEqual([...args], ['/FO', 'CSV', '/NH']); assert.equal(options.windowsHide, true); callback(null, '"ValveFin.exe","100"\r\n"active-setup.exe","200"\r\n') }, spawn: (file, args) => { launches.push({ file, args: [...args] }); return { unref() {}, once(name, callback) { if (name === 'spawn') callback() } } } }
@@ -99,10 +100,13 @@ for (const [platform, gameMode, launchFullscreen] of [['win32', false, false], [
   } })
   await Promise.resolve()
   window.webContents.mainFrame = { url: 'file:///dist/index.html' }
+  await assert.rejects(handlers.get('keyboard:command')({ sender: {} }, 'configure', { diagnostics: true }), /Unauthorized/)
+  await assert.rejects(handlers.get('keyboard:command')({ sender: window.webContents, senderFrame: {} }, 'configure', { diagnostics: true }), /Unauthorized/)
   await assert.rejects(handlers.get('updates:command')({ sender: {} }, 'install'), /Unauthorized/)
   await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: {} }, 'install'), /Unauthorized/)
   await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'automatic', 'true'), /Invalid/)
   window.webContents.mainFrame.url = 'https://untrusted.invalid'
+  await assert.rejects(handlers.get('keyboard:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'configure', { diagnostics: true }), /origin/)
   await assert.rejects(handlers.get('updates:command')({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'state'), /origin/)
   window.webContents.mainFrame.url = 'file:///dist/index.html'
   if (platform === 'win32') assert.deepEqual([...(await updateOptions.runningInstallers())], ['ValveFin.exe', 'active-setup.exe'])
@@ -179,7 +183,7 @@ console.log('PASS update IPC rejects foreign senders/subframes/origins and inval
 const preload = ts.transpileModule(await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
 let desktop
 const listeners = new Map(), invocations = []
-vm.runInNewContext(preload, { exports: {}, process: { platform: 'win32' }, require: () => ({
+vm.runInNewContext(preload, { exports: {}, process: { platform: 'win32' }, require: (name) => name === './keyboard-preload' ? { installKeyboard: (service) => assert.equal(service, false) } : ({
   contextBridge: { exposeInMainWorld: (_name, value) => { desktop = value } },
   ipcRenderer: { invoke: (...args) => { invocations.push(args); return Promise.resolve() }, on: (channel, callback) => listeners.set(channel, callback), removeListener: (channel) => listeners.delete(channel) },
 }) })

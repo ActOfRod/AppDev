@@ -1,8 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { UpdateState } from './update-types'
 import type { LauncherService, ServiceAction, ServiceState } from './service-types'
+import { installKeyboard } from './keyboard-preload'
+import type { KeyboardSettings } from './keyboard'
+
+installKeyboard(false)
 
 contextBridge.exposeInMainWorld('jellyfinDesktop', {
+  keyboard: {
+    state: () => ipcRenderer.invoke('keyboard:command', 'state') as Promise<KeyboardSettings>,
+    configure: (value: Partial<Pick<KeyboardSettings, 'guard' | 'diagnostics'>>) => ipcRenderer.invoke('keyboard:command', 'configure', value) as Promise<KeyboardSettings>,
+    openFolder: () => ipcRenderer.invoke('keyboard:command', 'open') as Promise<void>,
+  },
   services: {
     state: () => ipcRenderer.invoke('services:command', 'state'),
     open: (service: LauncherService) => ipcRenderer.invoke('services:command', 'open', service),

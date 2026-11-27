@@ -18,7 +18,7 @@ function preload(blocked = false) {
   const sent = [], events = {}, ipc = new EventEmitter()
   ipc.send = (_channel, value) => sent.push(value)
   const element = { setAttribute() {}, style: {} }
-  vm.runInNewContext(source, { exports: {}, require: (name) => name === 'electron' ? { ipcRenderer: ipc } : name.includes('serviceGamepad') ? { coalesceServicePads } : name.includes('steamOverlayRepaint') ? { startSteamOverlayRepaint: () => painted++ } : { createPadReader }, navigator: { getGamepads: () => { if (blocked) throw Error('Permissions policy denies gamepad'); return pads } }, performance: { now: () => 0 }, process, requestAnimationFrame: (f) => frame = f, window: { addEventListener: (name, f) => events[name] = f }, document: { createElement: () => element, documentElement: { append() {} } } })
+  vm.runInNewContext(source, { exports: {}, require: (name) => name === 'electron' ? { ipcRenderer: ipc } : name.includes('keyboard-preload') ? { installKeyboard: (service) => assert.equal(service, true) } : name.includes('serviceGamepad') ? { coalesceServicePads } : name.includes('steamOverlayRepaint') ? { startSteamOverlayRepaint: () => painted++ } : { createPadReader }, navigator: { getGamepads: () => { if (blocked) throw Error('Permissions policy denies gamepad'); return pads } }, performance: { now: () => 0 }, process, requestAnimationFrame: (f) => frame = f, window: { addEventListener: (name, f) => events[name] = f }, document: { createElement: () => element, documentElement: { append() {} } } })
   events.DOMContentLoaded()
   return { sent, ipc, painted: () => painted, poll: (time, next) => { pads = next; frame(time) } }
 }

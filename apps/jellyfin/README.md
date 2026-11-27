@@ -27,13 +27,19 @@ The controller-navigable overlay is a separate trusted view above the website: C
 
 Steam Input can keep the trackpads mapped as a mouse. A Gamepad template is recommended for the full controller map; keyboard/mouse mappings can use the fallback keys or the clickable Home pill. The pill occupies only a 140×42 region at the top center while visible, never takes focus merely by appearing, and hides on HTML fullscreen entry until mouse movement reveals it. It is a trusted ValveFin view, not injected into the website. Short Escape remains available to the site, including exiting its fullscreen.
 
-Overlapping physical/virtual gamepad presses are combined in native Jellyfin and launcher keyboards as well as service overlays, so mirrored A presses type only once. Normal physical keyboard input is not filtered or time-debounced. Prime Video uses `https://www.primevideo.com/` and a desktop Chrome UA; Amazon sign-in HTTP(S) links/popups stay in the service partition, preserving popup POST data and referrers.
+Overlapping physical/virtual gamepad presses are combined in native Jellyfin and launcher keyboards as well as service overlays, so mirrored A presses type only once. Prime Video uses `https://www.primevideo.com/` and a desktop Chrome UA; Amazon sign-in HTTP(S) links/popups stay in the service partition, preserving popup POST data and referrers.
 
 After building, `node scripts/check-keyboard-prime.mjs` requires native X input (`xdotool`), ImageMagick `import`, a display and the local Jellyfin fixture on port 8096 (`devin` test account). It tests every text-entry surface with native key events, separately simulates staggered mirrored controllers, and checks a local POST login popup. Set `KEYBOARD_APPIMAGE` to test a package instead of built Electron. Add `--prime-live` for the real Prime home → Amazon Sign-In probe; it never submits credentials. Screenshots are saved in `~/shots/0.3.3/`. A physical SteamOS/Steam Input keyboard configuration is not reproduced by X input alone.
 
 Service text uses Chromium's native input path, never key/text forwarding from the launcher or Home pill. While a service is active, root/pill focus and native window reactivation restore the service; an open menu/keyboard owns focus until dismissed. This does not activate ValveFin over another application. ValveFin's OSK commits once per open keyboard and ignores stale submissions after closing.
 
+Launcher settings and Jellyfin Settings include **Fix doubled typing in services** (on by default). The service-only capture guard suppresses trusted duplicate keydown without keyup/non-repeat and matching keypress/text-input events within 30 ms without a key release. It also suppresses a composition commit followed by the same keypress. Key release/repress and held-key repeat remain supported. Turn it off if it interferes with a site's editor; Chromium's non-cancelable composition updates cannot be canceled by a preload.
+
+**Log keyboard input (diagnostics)** is off by default. When enabled, root/service views append compact JSONL to `<userData>/logs/keyboard.log`, including event metadata, epoch-millisecond timestamps, native focus owner and one startup environment/flags record per process. Password key/code/data are masked; unknown/retargeted fields (including closed-shadow fields) are conservatively masked too. URLs and page contents are not collected. Other typed text is sensitive: turn logging off after reproducing, review before sharing, and delete the file when finished. **Open log folder** opens the directory shown beside the controls. Preferences persist across restart and apply to already-open services.
+
 `node scripts/check-service-keyboard.mjs` checks native X typing with service/root/Home focus, overlay close and window blur/refocus, records trusted input events and instruments injected input. It also checks composition through CDP (not a native XIM engine). Set `SERVICE_KEYBOARD_APPIMAGE` for a packaged check; `--diagnose` logs focus/input without asserting the focus-recovery expectations. These checks reproduce lost keyboard routing on 0.3.2, not the reported gamescope-specific doubled input; actual gamescope/Steam IME behavior remains hardware-unverified.
+
+Service overlays/Home views are excluded from the log so ValveFin's service OSK cannot expose a password through its plain-text editing field. The resulting service password-field input is masked as usual. `node scripts/check-keyboard-guard.mjs` covers the guard state machine and logger permissions/settings; `check-service-keyboard.mjs` also exercises trusted Chromium duplicate events and native diagnostic/password checks.
 
 `node scripts/check-service-input.mjs` checks mirrored/staggered controller deduplication and unavailable Gamepad API handling. After building, `node scripts/check-service-return.mjs` is a Linux native-focus regression: it uses `/dev/uinput` and passwordless `sudo -n` to create temporary kernel gamepads, clicks the service view, operates the real Gamepad API and menu, and checks keyboard/mouse fallbacks. Only its temporary virtual input devices are made readable and they are destroyed on exit. Native Windows/physical Steam Controller behavior still requires hardware verification.
 
@@ -146,7 +152,7 @@ Installed Windows NSIS builds download the matching Setup executable, verify SHA
 
 ## 0.3.3
 
-- Service native-focus ownership and one-shot ValveFin OSK commits; no ordinary key forwarding, character filtering or time-based deduplication. See the service keyboard regression above for reproduction limits.
+- Service native-focus ownership and one-shot ValveFin OSK commits; no ordinary key forwarding. Optional default-on duplicate-text protection and opt-in masked keyboard diagnostics help investigate SteamOS input routing. See the service keyboard regression above for reproduction limits.
 
 ## 0.3.2
 

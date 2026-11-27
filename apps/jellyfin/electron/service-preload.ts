@@ -5,6 +5,9 @@ import { createPadReader } from '../src/lib/gamepad'
 import { coalesceServicePads } from '../src/lib/serviceGamepad'
 import { startSteamOverlayRepaint } from '../src/lib/steamOverlayRepaint'
 import type { ServiceInput } from './service-types'
+import { installKeyboard } from './keyboard-preload'
+
+installKeyboard(true)
 
 function gamepads() { try { return coalesceServicePads(navigator.getGamepads?.() ?? []) } catch { return [] } }
 let readPads = createPadReader(gamepads())
