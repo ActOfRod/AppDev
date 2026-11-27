@@ -6,7 +6,7 @@ import os from 'node:os'
 
 const diagnose = process.argv.includes('--diagnose'), live = process.argv.includes('--prime-live'), connections = []
 const directory = os.homedir() + '/.local/share/valvefin-keyboard-prime-check'
-const shots = os.homedir() + '/shots/0.3.2'
+const shots = os.homedir() + '/shots/0.3.3'
 await mkdir(directory, { recursive: true })
 await mkdir(shots, { recursive: true })
 let popupRequest
