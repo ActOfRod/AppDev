@@ -33,8 +33,17 @@ export class Services {
   constructor(private window: BrowserWindow, private uiUrl: string, private fullscreen = () => window.isFullScreen()) {
     window.on('resize', () => this.resize())
     window.on('closed', () => this.close(false))
+    window.on('focus', () => this.restoreFocus())
+    window.webContents.on('focus', () => this.restoreFocus())
   }
   snapshot() { return { ...this.state } }
+  keyboardView(contents: Electron.WebContents | null) { return contents === this.view?.webContents ? 'service' : contents === this.home?.webContents ? 'home' : contents === this.overlay?.webContents ? 'overlay' : 'none' }
+  private restoreFocus() { setTimeout(() => this.focusActiveView(), 0) }
+  private focusActiveView() {
+    if (this.window.isDestroyed() || this.state.status !== 'active' || !this.window.isFocused()) return
+    const wc = this.state.overlay ? this.overlay?.webContents : this.view?.webContents
+    if (wc && !wc.isDestroyed() && !wc.isFocused()) wc.focus()
+  }
   private publish() {
     this.state.canBack = this.view?.webContents.navigationHistory.canGoBack() ?? false
     this.state.canForward = this.view?.webContents.navigationHistory.canGoForward() ?? false
@@ -135,7 +144,7 @@ export class Services {
         this.startUrl = wc.getURL()
         await this.prepareHome(generation)
         if (generation !== this.generation) return this.snapshot()
-        this.state.status = 'active'; this.publish(); if (this.window.isFocused()) wc.focus()
+        this.state.status = 'active'; this.publish(); this.focusActiveView()
         this.showHome(4000)
       }
     } catch (error) { this.fail(error, generation) }
@@ -190,15 +199,16 @@ export class Services {
     home.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     home.webContents.on('will-navigate', (event) => event.preventDefault())
     home.webContents.on('before-input-event', (event, input) => this.returnKey(event, input, false))
+    home.webContents.on('focus', () => this.restoreFocus())
     const url = new URL(this.uiUrl); url.searchParams.set('service-home', '1')
     await home.webContents.loadURL(url.href)
     if (generation === this.generation) this.homeReady = true
   }
-  private hideHome() { clearTimeout(this.homeTimer); this.home?.setVisible(false) }
+  private hideHome() { clearTimeout(this.homeTimer); const focused = this.home?.webContents.isFocused(); this.home?.setVisible(false); if (focused) this.focusActiveView() }
   private showHome(duration = 2500) {
     if (!this.homeReady || this.state.overlay || !this.window.isFocused()) return
     clearTimeout(this.homeTimer); this.home?.setVisible(true)
-    this.homeTimer = setTimeout(() => this.home?.setVisible(false), duration)
+    this.homeTimer = setTimeout(() => this.hideHome(), duration)
   }
   private async showOverlay(mode: 'menu' | 'keyboard') {
     if (!this.view) return
@@ -213,16 +223,17 @@ export class Services {
       this.overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       this.overlay.webContents.on('will-navigate', (event) => event.preventDefault())
       this.overlay.webContents.on('before-input-event', (event, input) => this.returnKey(event, input, false))
+      this.overlay.webContents.on('focus', () => { if (!this.state.overlay) this.restoreFocus() })
       const url = new URL(this.uiUrl); url.searchParams.set('service-overlay', '1')
       await this.overlay.webContents.loadURL(url.href)
     }
     if (generation !== this.generation || !this.overlay || !this.state.overlay) return
     this.overlay.setVisible(true); this.publish()
-    if (this.window.isFocused()) this.overlay.webContents.focus()
+    this.focusActiveView()
   }
   private hideOverlay() {
     this.state.overlay = undefined; this.overlay?.setVisible(false); this.publish()
-    if (this.view) { this.view.webContents.send('services:reset'); if (this.window.isFocused()) this.view.webContents.focus() }
+    if (this.view) { this.view.webContents.send('services:reset'); this.focusActiveView() }
   }
   async command(action: unknown, text?: unknown) {
     if (action === 'home') { this.close(); return this.snapshot() }
@@ -232,7 +243,8 @@ export class Services {
     const wc = this.view.webContents
     if (action === 'type') {
       if (typeof text !== 'string' || text.length > 10000) throw Error('Invalid keyboard text')
-      this.hideOverlay(); wc.insertText(text); return this.snapshot()
+      if (this.state.overlay !== 'keyboard') return this.snapshot()
+      this.hideOverlay(); await wc.insertText(text); return this.snapshot()
     }
     if (typeof action !== 'string' || !actions.has(action as ServiceAction)) throw Error('Invalid service action')
     if (action === 'menu' || action === 'keyboard') { await this.showOverlay(action); return this.snapshot() }

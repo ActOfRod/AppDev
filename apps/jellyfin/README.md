@@ -1,4 +1,4 @@
-# ValveFin 0.3.2
+# ValveFin 0.3.3
 
 Controller-first media launcher and native Jellyfin client for **Windows and Linux/SteamOS**, designed for Steam Big Picture and Game Mode. Visual language follows [ElegantFin](https://github.com/lscambo13/ElegantFin): dark slate, cinematic backdrops and highly visible white focus borders.
 
@@ -27,9 +27,19 @@ The controller-navigable overlay is a separate trusted view above the website: C
 
 Steam Input can keep the trackpads mapped as a mouse. A Gamepad template is recommended for the full controller map; keyboard/mouse mappings can use the fallback keys or the clickable Home pill. The pill occupies only a 140×42 region at the top center while visible, never takes focus merely by appearing, and hides on HTML fullscreen entry until mouse movement reveals it. It is a trusted ValveFin view, not injected into the website. Short Escape remains available to the site, including exiting its fullscreen.
 
-Overlapping physical/virtual gamepad presses are combined in native Jellyfin and launcher keyboards as well as service overlays, so mirrored A presses type only once. Normal physical keyboard input is not filtered or time-debounced. Prime Video uses `https://www.primevideo.com/` and a desktop Chrome UA; Amazon sign-in HTTP(S) links/popups stay in the service partition, preserving popup POST data and referrers.
+Overlapping physical/virtual gamepad presses are combined in native Jellyfin and launcher keyboards as well as service overlays, so mirrored A presses type only once. Prime Video uses `https://www.primevideo.com/` and a desktop Chrome UA; Amazon sign-in HTTP(S) links/popups stay in the service partition, preserving popup POST data and referrers.
 
-After building, `node scripts/check-keyboard-prime.mjs` requires native X input (`xdotool`), ImageMagick `import`, a display and the local Jellyfin fixture on port 8096 (`devin` test account). It tests every text-entry surface with native key events, separately simulates staggered mirrored controllers, and checks a local POST login popup. Set `KEYBOARD_APPIMAGE` to test a package instead of built Electron. Add `--prime-live` for the real Prime home → Amazon Sign-In probe; it never submits credentials. Screenshots are saved in `~/shots/0.3.2/`. A physical SteamOS/Steam Input keyboard configuration is not reproduced by X input alone.
+After building, `node scripts/check-keyboard-prime.mjs` requires native X input (`xdotool`), ImageMagick `import`, a display and the local Jellyfin fixture on port 8096 (`devin` test account). It tests every text-entry surface with native key events, separately simulates staggered mirrored controllers, and checks a local POST login popup. Set `KEYBOARD_APPIMAGE` to test a package instead of built Electron. Add `--prime-live` for the real Prime home → Amazon Sign-In probe; it never submits credentials. Screenshots are saved in `~/shots/0.3.3/`. A physical SteamOS/Steam Input keyboard configuration is not reproduced by X input alone.
+
+Service text uses Chromium's native input path, never key/text forwarding from the launcher or Home pill. While a service is active, root/pill focus and native window reactivation restore the service; an open menu/keyboard owns focus until dismissed. This does not activate ValveFin over another application. ValveFin's OSK commits once per open keyboard and ignores stale submissions after closing.
+
+Launcher settings and Jellyfin Settings include **Fix doubled typing in services** (on by default). The service-only capture guard suppresses trusted duplicate non-repeat keydown and matching keypress/text-input events within 30 ms without a key release. The keydown window also expires when a shortcut consumes keyup, so separate Escape/F10/Alt+Left/BrowserBack/Home taps cannot remain stuck. It also suppresses a composition commit followed by the same keypress. Key release/repress and held-key repeat remain supported. Turn it off if it interferes with a site's editor; Chromium's non-cancelable composition updates cannot be canceled by a preload.
+
+**Log keyboard input (diagnostics)** is off by default. When enabled, root/service views append compact JSONL to `<userData>/logs/keyboard.log`, including event metadata, epoch-millisecond timestamps, native focus owner and one startup environment/flags record per process. Password key/code/data are masked; unknown/retargeted fields (including closed-shadow fields) are conservatively masked too. URLs and page contents are not collected. Other typed text is sensitive: turn logging off after reproducing, review before sharing, and delete the file when finished. **Open log folder** opens the directory shown beside the controls. Preferences persist across restart and apply to already-open services.
+
+`node scripts/check-service-keyboard.mjs` checks native X typing with service/root/Home focus, overlay close and window blur/refocus, records trusted input events and instruments injected input. It also checks composition through CDP (not a native XIM engine). Set `SERVICE_KEYBOARD_APPIMAGE` for a packaged check; `--diagnose` logs focus/input without asserting the focus-recovery expectations. These checks reproduce lost keyboard routing on 0.3.2, not the reported gamescope-specific doubled input; actual gamescope/Steam IME behavior remains hardware-unverified.
+
+Service overlays/Home views are excluded from the log so ValveFin's service OSK cannot expose a password through its plain-text editing field. The resulting service password-field input is masked as usual. `node scripts/check-keyboard-guard.mjs` covers the guard state machine and logger permissions/settings; `check-service-keyboard.mjs` also exercises trusted Chromium duplicate events and native diagnostic/password checks.
 
 `node scripts/check-service-input.mjs` checks mirrored/staggered controller deduplication and unavailable Gamepad API handling. After building, `node scripts/check-service-return.mjs` is a Linux native-focus regression: it uses `/dev/uinput` and passwordless `sudo -n` to create temporary kernel gamepads, clicks the service view, operates the real Gamepad API and menu, and checks keyboard/mouse fallbacks. Only its temporary virtual input devices are made readable and they are destroyed on exit. Native Windows/physical Steam Controller behavior still requires hardware verification.
 
@@ -69,16 +79,16 @@ The portable `ValveFin.exe` is an NSIS launcher: it extracts the app into a temp
 Download from [Releases](https://github.com/ActOfRod/AppDev/releases) when available:
 
 - **ValveFin.exe**: portable; keep it in a permanent, writable folder and run it.
-- **ValveFin-Setup-0.3.2.exe**: optional NSIS installer.
+- **ValveFin-Setup-0.3.3.exe**: optional NSIS installer.
 
 Unsigned builds can trigger SmartScreen. Verify the source/download before choosing **More info → Run anyway**. Add the portable or installed executable with **Steam → Games → Add a Non-Steam Game**, then launch from Big Picture. Preferences live in your user profile, not beside the executable.
 
 ## SteamOS / Steam Deck install
 
-1. Switch to **Desktop Mode** and download **ValveFin-0.3.2-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
+1. Switch to **Desktop Mode** and download **ValveFin-0.3.3-x86_64.AppImage** to a permanent folder, e.g. `~/Applications/`.
 2. Dolphin → Properties → Permissions → **Is executable**, or run:
    ```bash
-   chmod +x ~/Applications/ValveFin-0.3.2-x86_64.AppImage
+   chmod +x ~/Applications/ValveFin-0.3.3-x86_64.AppImage
    ```
 3. Run it once; sign in using the controller keyboard, a physical keyboard or Quick Connect.
 4. Steam → **Add a Non-Steam Game → Browse**, select the AppImage (show all files), and name it ValveFin. **Do not force Proton**: this is a native Linux app.
@@ -94,9 +104,9 @@ Without FUSE, set the Steam shortcut's launch options to:
 --appimage-extract-and-run
 ```
 
-Or run `./ValveFin-0.3.2-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
+Or run `./ValveFin-0.3.3-x86_64.AppImage --appimage-extract-and-run` in Desktop Mode. No `sudo`, chrome-sandbox permission changes or read-only-root changes are needed.
 
-The alternative **ValveFin-0.3.2-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
+The alternative **ValveFin-0.3.3-x64.tar.gz** contains an unpacked native app. Extract into a writable folder and run `ValveFin`. It uses Chromium's normal Linux sandbox; prefer the AppImage on SteamOS rather than modifying sandbox permissions.
 
 Linux VA-API decode is enabled where Electron/Mesa/drivers support it; unsupported codecs fall back to software decoding or Jellyfin transcoding. Hardware decode and physical-controller behavior should be checked on the target device.
 
@@ -132,13 +142,17 @@ Build on the matching OS where possible. Windows cross-builds on Linux need Wine
 
 The [Build ValveFin workflow](../../.github/workflows/build-jellyfin-windows.yml) builds on `windows-latest` and `ubuntu-latest` for relevant PRs, main pushes and manual dispatch. Download `valvefin-windows` / `valvefin-linux` workflow artifacts for untagged builds.
 
-Maintainers can publish all four packages by pushing **`valvefin-v0.3.2`** after checking the matching package version. Tag builds validate the version and publish packages plus `SHA256SUMS.txt` only after both platforms succeed. Builds are unsigned unless optional signing credentials are configured. SHA-256 checksums detect corrupt downloads; they are not code signatures.
+Maintainers can publish all four packages by pushing **`valvefin-v0.3.3`** after checking the matching package version. Tag builds validate the version and publish packages plus `SHA256SUMS.txt` only after both platforms succeed. Builds are unsigned unless optional signing credentials are configured. SHA-256 checksums detect corrupt downloads; they are not code signatures.
 
 ## Client updates
 
 Settings → Updates checks stable `valvefin-v*` releases from ActOfRod/AppDev. Startup checks default to On and announce available updates without moving focus; they never download or install automatically. Release notes are paged for gamepad use. Downloads show progress and can be cancelled before installation. Offline and GitHub rate-limit errors are shown in Settings.
 
 Installed Windows NSIS builds download the matching Setup executable, verify SHA-256, then start the silent installer and quit. The installer restarts ValveFin. Linux AppImages download beside the current file, verify SHA-256, mark it executable and atomically replace the same path before relaunch, preserving the Steam shortcut. The AppImage and its containing directory must be writable; symlink targets are refused. Portable Windows, Linux tar/unpacked and development builds only open the release page. Releases without a matching checksums asset cannot be installed in-app. Network, filesystem and installer actions run only in the main process through validated IPC.
+
+## 0.3.3
+
+- Service native-focus ownership and one-shot ValveFin OSK commits; no ordinary key forwarding. Optional default-on duplicate-text protection and opt-in masked keyboard diagnostics help investigate SteamOS input routing. See the service keyboard regression above for reproduction limits.
 
 ## 0.3.2
 

@@ -6,14 +6,14 @@ import ts from 'typescript'
 import path from 'node:path'
 
 const stores = new Map(), handlers = new Map(), views = [], stopped = []
-let drmError = false, focused = true, quit = false, readyCount = 0, contentsId = 0
+let drmError = false, focused = true, quit = false, readyCount = 0, contentsId = 0, focusedContents
 class Contents extends EventEmitter {
   constructor() { super(); this.id = ++contentsId; this.mainFrame = { url: 'https://valvefin.test/index.html' }; this.events = []; this.url = ''; this.destroyed = false; this.history = []; this.navigationHistory = { canGoBack: () => this.history.length > 1, canGoForward: () => false, goBack: () => { this.url = this.history[0]; this.history.pop() }, goForward() {}, clear: () => { this.history = [this.url] } } }
-  send() {} focus() {} setUserAgent(value) { this.ua = value } setWindowOpenHandler(handler) { this.popup = handler }
+  send() {} focus() { focusedContents = this; this.emit('focus') } isFocused() { return focusedContents === this } setUserAgent(value) { this.ua = value } setWindowOpenHandler(handler) { this.popup = handler }
   async executeJavaScript() { return false }
   async loadURL(url, options) { if (url.includes('offline')) throw Error('Offline fixture'); this.url = url; this.history.push(url); this.mainFrame.url = url; this.loadOptions = options }
   getURL() { return this.url } isDestroyed() { return this.destroyed } close() { this.destroyed = true }
-  sendInputEvent(event) { this.events.push(event) } insertText(value) { this.text = value } reload() {} setZoomFactor(value) { this.zoom = value }
+  sendInputEvent(event) { this.events.push(event) } insertText(value) { this.text = value; this.commits = (this.commits ?? 0) + 1 } reload() {} setZoomFactor(value) { this.zoom = value }
 }
 class View { constructor(options) { this.options = options; this.webContents = new Contents(); this.webContents.session = options.webPreferences.session; views.push(this) } setBounds(value) { this.bounds = value } setVisible(value) { this.visible = value } setBackgroundColor() {} }
 const window = new EventEmitter(); window.webContents = new Contents(); window.isDestroyed = () => false; window.isFocused = () => focused; window.getContentSize = () => [1280, 800]; const children = []; window.contentView = { addChildView: (v) => children.push(v), removeChildView: (v) => { const i = children.indexOf(v); if (i >= 0) children.splice(i, 1) } }
@@ -85,6 +85,11 @@ console.log('PASS HTTP(S) popups stay in the service session with referrer and U
 const key = (contents, name, type = 'keyDown', extra = {}) => { let prevented = false; contents.emit('before-input-event', { preventDefault() { prevented = true } }, { key: name, type, ...extra }); return prevented }
 const home = views.find((v) => v.webContents.url.includes('service-home'))
 assert.equal(home.bounds.width, 140); assert.equal(home.bounds.height, 42); assert.equal(home.visible, true)
+assert.equal(focusedContents, wc, 'Opening focuses the native service view')
+window.webContents.focus(); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, wc, 'Root focus transfers to the service without forwarding keys')
+home.webContents.focus(); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, wc, 'Home pill cannot retain keyboard focus')
+focused = false; window.webContents.focus(); window.emit('focus'); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, window.webContents, 'Never reclaim focus from another application')
+focused = true; window.emit('focus'); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, wc, 'Window refocus restores the service')
 await assert.rejects(manager.command('home-hover', 'bad'), /Invalid Home hover/)
 wc.emit('enter-html-full-screen'); assert.equal(home.visible, false)
 wc.emit('before-mouse-event', {}, { type: 'mouseMove', x: 400, y: 200 }); assert.equal(home.visible, true); wc.emit('leave-html-full-screen')
@@ -92,6 +97,7 @@ assert.equal(key(wc, 'F10'), true); await Promise.resolve(); await Promise.resol
 assert.equal(manager.snapshot().overlay, 'menu')
 key(wc, 'F10', 'keyDown', { isAutoRepeat: true }); assert.equal(manager.snapshot().overlay, 'menu')
 const menu = views.find((v) => v.webContents.url.includes('service-overlay')).webContents
+window.webContents.focus(); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, menu, 'Visible overlay owns keyboard focus, not root or service')
 key(menu, 'F10', 'keyUp'); await manager.command('dismiss')
 key(wc, 'Escape'); key(wc, 'Escape', 'keyUp'); assert.equal(manager.snapshot().overlay, undefined)
 key(wc, 'Escape'); await new Promise((r) => setTimeout(r, 1050)); assert.equal(manager.snapshot().overlay, 'menu')
@@ -107,7 +113,12 @@ manager.input(input, { action: 'pointer', x: 40, y: 50 }); manager.input(input, 
 assert.ok(wc.events.some((e) => e.type === 'mouseDown' && e.x === 40 && e.y === 50))
 wc.emit('enter-html-full-screen'); await manager.command('back'); assert.ok(wc.events.some((e) => e.keyCode === 'Escape')); wc.emit('leave-html-full-screen')
 await manager.command('menu'); assert.equal(manager.snapshot().overlay, 'menu'); assert.equal(children.length, 3)
-await manager.command('type', 'typed'); assert.equal(wc.text, 'typed'); assert.equal(manager.snapshot().overlay, undefined)
+await manager.command('type', 'unsolicited'); assert.equal(wc.commits, undefined)
+await manager.command('keyboard'); await Promise.all([manager.command('type', 'typed'), manager.command('type', 'typed')]); assert.equal(wc.text, 'typed'); assert.equal(wc.commits, 1); assert.equal(manager.snapshot().overlay, undefined)
+menu.focus(); await new Promise(r => setTimeout(r, 10)); assert.equal(focusedContents, wc, 'Hidden overlay cannot retain keyboard focus')
+await manager.command('keyboard'); await manager.command('type', ''); assert.equal(wc.text, ''); assert.equal(wc.commits, 2)
+await manager.command('keyboard'); await assert.rejects(manager.command('type', 12), /Invalid keyboard text/); await manager.command('dismiss'); assert.equal(focusedContents, wc)
+console.log('PASS service focus ownership: root/pill/hidden overlay recover to service, visible overlay retains focus, background never reclaimed; OSK commits exactly once, ignores stale/unsolicited commits and handles empty/invalid text')
 wc.emit('media-started-playing'); await manager.command('home'); assert.equal(wc.destroyed, true); assert.ok(stopped.includes(17)); assert.equal(children.length, 0)
 assert.equal(store.webRequest.listener, null, 'Closing a service removes the replay header listener')
 await manager.open(config); assert.equal(stores.size, 1); await manager.command('sign-out'); assert.equal(store.cleared, true)

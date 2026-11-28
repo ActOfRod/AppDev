@@ -6,7 +6,7 @@ import os from 'node:os'
 
 const diagnose = process.argv.includes('--diagnose'), live = process.argv.includes('--prime-live'), connections = []
 const directory = os.homedir() + '/.local/share/valvefin-keyboard-prime-check'
-const shots = os.homedir() + '/shots/0.3.2'
+const shots = os.homedir() + '/shots/0.3.3'
 await mkdir(directory, { recursive: true })
 await mkdir(shots, { recursive: true })
 let popupRequest
@@ -54,8 +54,8 @@ try {
   child = spawn('dbus-run-session', ['--', ...(image ? [image, '--appimage-extract-and-run'] : ['node_modules/.bin/electron', 'dist-electron/main.js', '--no-sandbox']), '--disable-gpu', '--inspect=9265', '--remote-debugging-port=9266', `--user-data-dir=${directory}`], { stdio: 'ignore' })
   main = await connect(9265); root = await connect(9266, (t) => t.type === 'page' && t.url.startsWith('file:'))
   await wait(root, `!!document.querySelector('.launcher')`)
-  await root.eval(`localStorage.clear();location.reload();true`)
-  await wait(root, `!!document.querySelector('.launcher')`)
+  await root.eval(`window.keyboardReloadPending=true;localStorage.clear();location.reload();true`)
+  await wait(root, `!window.keyboardReloadPending && !!document.querySelector('.service-add')`)
   await main.eval(`${win}.setFullScreen(false);${win}.setBounds({x:0,y:0,width:1440,height:1000});${win}.focus();true`)
   xid = await main.eval(`${win}.getNativeWindowHandle().readUInt32LE(0)`)
   console.log('RUNTIME', await main.eval(`({packaged:${req}.app.isPackaged,version:${req}.app.getVersion()})`))
